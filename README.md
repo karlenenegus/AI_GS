@@ -13,7 +13,7 @@ bash data/download_data.sh
 
 # 3. Setup environment
 conda env create -f environment.yml
-conda activate genomics-pipeline
+conda activate AI_GS
 
 # 4. Test pipeline with tiny data (30 seconds)
 nextflow run main.nf \
