@@ -5,8 +5,8 @@ Nextflow pipeline for genomic prediction using Huggingface models & trainer on p
 ## Quick Start
 ```bash
 # 1. Clone repository
-git clone https://github.com/yourusername/genomics-pipeline.git
-cd genomics-pipeline
+git clone https://github.com/karlenenegus/AI_GS.git
+cd AI_GS
 
 # 2. Download public data (~500MB, takes 2-5 minutes)
 bash data/download_data.sh
