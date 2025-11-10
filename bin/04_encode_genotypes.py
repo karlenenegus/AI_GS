@@ -39,8 +39,6 @@ parser.add_argument("--nSubsample", type=int, default=None, help="Used for local
 parser.add_argument("--kernel_type", type=str, default=None, help="Kernel type used for nystroem-KPCA encoding methods. See sklearn.kernel_approximation.Nystroem for more information. Options: 'rbf', 'cosine', 'sigmoid', 'polynomial")
 parser.add_argument("--gamma", type=float, default=None, help="Gamma parameter for select kernels within the nystroem-KPCA encoding method. See sklearn.kernel_approximation.Nystroem for more information. Default option interpreted differnetly based on method.")
 
-
-
 args = parser.parse_args()
 
 hmp_metadata_names = ["rs#", "alleles", "chrom", "pos", "strand", "assembly#", "center", "protLSID", "assayLSID", "panelLSID", "QCcode"]
@@ -79,8 +77,6 @@ else:
         value_error_message = f"Encoding configuration file not found: {args.output_folder}/encoding_config.yaml. \n This file is required for validation and testing sets. Please run training first to create it."
         raise ValueError(value_error_message)
 
-print('start emb ->')
-
 mk_emb = Make_Embeddings(input_file=args.input_hmp_file, hmp_metadata_column_names=hmp_metadata_names, encoding_config=encoding_config, output_dir=args.output_folder)
 
 if args.train_type == "Training":
@@ -88,12 +84,9 @@ if args.train_type == "Training":
 else:
     mk_emb.inference_mode(file_prefix=args.train_type, ind_names_to_keep=pheno_data[args.geno_col])
 
-print('finish save encodings')
-
-
 mk_emb.stream_encodings_to_parquet(
     phenotype_data=pheno_data,
     batch_size=100,
     file_prefix=args.train_type
 )
-print('finish pheno -> pheno + embeddings')
+print(f"Encoding complete for {args.train_type} set: {len(pheno_data)} samples")

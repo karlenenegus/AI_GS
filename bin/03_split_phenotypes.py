@@ -54,15 +54,12 @@ if args.envs_hold_out > 0:
 else:
     env_hold_out = False
 
-print("Starting phenotype preprocessing...")
-
 # Load BLUE results
 input_pheno_file = Path(args.input_pheno_file)
 if not input_pheno_file.exists():
     raise FileNotFoundError(f"BLUE results file not found: {input_pheno_file}")
 
 pheno_data = pd.read_csv(input_pheno_file)
-print(f"Loaded {len(pheno_data)} rows from phenotype file")
 
 # Load column mapping to get trait name
 mapping_file = Path(args.mapping_json_path)
@@ -79,25 +76,21 @@ pheno_data[args.geno_col].astype(str).to_csv(
     index=False,
     header=False
 )
-print(f"Saved genotype list to: {geno_list_file}")
 
 # Handle special case: (1.0, 0, 0) - all data goes to one split
 if args.train_split == 1.0 and args.test_split == 0 and args.validation_split == 0:
-    print("Special case: All data will be assigned to training set")
     pheno_data['fold'] = 0  # All in fold 0
     k_train = 1
     k_val = 0
     k_test = 0
     k_fold = 1
 elif args.test_split == 1.0 and args.train_split == 0 and args.validation_split == 0:
-    print("Special case: All data will be assigned to test set")
     pheno_data['fold'] = 0  # All in fold 0
     k_train = 0
     k_val = 0
     k_test = 1
     k_fold = 1
 elif args.validation_split == 1.0 and args.train_split == 0 and args.test_split == 0:
-    print("Special case: All data will be assigned to validation set")
     pheno_data['fold'] = 0  # All in fold 0
     k_train = 0
     k_val = 1
@@ -128,8 +121,6 @@ if env_hold_out:
     unique_envs = pheno_data[args.env_col].unique()
     np.random.seed(args.randomstate)
     env_to_hold_out = np.random.choice(unique_envs, size=args.env_hold_out)
-    
-    print(f"Holding out environment: {env_to_hold_out}")
     
     # Create environment dictionary
     env_df = pd.DataFrame({
@@ -182,8 +173,6 @@ trait_name = 'trait_name'
 data_train = pheno_data.iloc[train_idx].copy()
 data_test = pheno_data.iloc[test_idx].copy()
 data_val = pheno_data.iloc[val_idx].copy()
-
-print(f"Train: {len(data_train)} rows, Test: {len(data_test)} rows, Val: {len(data_val)} rows")
 
 # Convert splits to output format
 data_train = convert2output(
@@ -267,5 +256,26 @@ data_train_scaled.to_csv(f'{args.output_pheno_file_prefix}_Training.csv', index=
 data_val_scaled.to_csv(f'{args.output_pheno_file_prefix}_Validation.csv', index=False)
 data_test_scaled.to_csv(f'{args.output_pheno_file_prefix}_Testing.csv', index=False)
 
-print(f"Saved preprocessed data to: {output_dir}")
-print("Preprocessing completed successfully")
+# Save genotype list for filtering
+prefixes_training_file = output_dir / "data" / f"keep_geno_prefixes_training.txt"
+data_train_scaled['geno'].astype(str).to_csv(
+    prefixes_training_file,
+    index=False,
+    header=False
+)
+
+prefixes_validation_file = output_dir / "data" / f"keep_geno_prefixes_validation.txt"
+data_val_scaled['geno'].astype(str).to_csv(
+    prefixes_validation_file,
+    index=False,
+    header=False
+)
+
+prefixes_testing_file = output_dir / "data" / f"keep_geno_prefixes_testing.txt"
+data_test_scaled['geno'].astype(str).to_csv(
+    prefixes_testing_file,
+    index=False,
+    header=False
+)
+
+print(f"Split complete: Train={len(data_train_scaled)}, Val={len(data_val_scaled)}, Test={len(data_test_scaled)}. Saved to: {output_dir}")

@@ -60,12 +60,8 @@ if not input_pheno_path.exists():
 if not mapping_json_path.exists():
     raise FileNotFoundError(f"Mapping JSON file not found: {mapping_json_path}\nPlease create a mapping file. See data/pheno_column_mapping.json.example for an example.")
 
-print("Starting BLUE formula generation...")
-print(f"Loading filtered data from: {input_pheno_path}")
-
 # Load filtered phenotype data
 phenotype_data = pd.read_csv(input_pheno_path)
-print(f"Loaded {len(phenotype_data)} rows")
 
 # Load mapping file
 with open(mapping_json_path, 'r') as f:
@@ -83,19 +79,13 @@ if args.filter_by_name:
     if not filter_file.exists():
         raise FileNotFoundError(f"Filter file not found: {filter_file}")
     
-    print(f"\nFiltering by geno_env combinations from: {filter_file}")
     with open(filter_file, 'r') as f:
         keep_combinations = set(line.strip() for line in f if line.strip())
     
     # Create geno_env column for filtering
     phenotype_data['geno_env'] = phenotype_data[geno_col].astype(str) + '_' + phenotype_data[env_col].astype(str)
     
-    before_filter = len(phenotype_data)
     phenotype_data = phenotype_data[phenotype_data['geno_env'].isin(keep_combinations)].copy()
-    after_filter = len(phenotype_data)
-    
-    print(f"Filtered from {before_filter} to {after_filter} rows")
-    print(f"Kept {len(keep_combinations)} geno_env combinations")
     
     # Drop the temporary geno_env column
     phenotype_data = phenotype_data.drop(columns=['geno_env'])
@@ -134,7 +124,6 @@ for old_effect_name in random_effects_variables:
     new_effect_names = []
     split_old_effect = old_effect_name.split('_') #[value1, value2, ..., valueN]
     if len(split_old_effect) == 1:
-        print(split_old_effect)
         new_effect_names_str = split_old_effect[0]
     else:
         for old_name in split_old_effect:
@@ -153,9 +142,7 @@ for old_effect_name in random_effects_variables:
 formulas = {}
 
 # Generate formulas for each environment
-print("\nGenerating BLUE formulas for each environment...")
 for environment in model_data["env"].unique():
-    print(f"\nProcessing environment: {environment}")
     environment_data = model_data[model_data["env"] == environment]
     
     if not random_effects_variables:
@@ -163,13 +150,11 @@ for environment in model_data["env"].unique():
         formula = "trait_value ~ geno"
     else:
         random_effects = generate_valid_random_terms(environment_data, new_random_effects_variables)
-        print(f"Random effects: {random_effects}")
         
         # Build formula (use trait_value as the response variable)
         fixed_effects = "trait_value ~ geno + "
         formula = fixed_effects + " + ".join(random_effects)
     
-    print(f"Final formula: {formula}")
     formulas[environment] = formula
 
 # Output formulas
@@ -186,5 +171,4 @@ model_data.to_csv(args.output_pheno_path)
 # Ensure output directory exists
 output_formulas_path.parent.mkdir(parents=True, exist_ok=True)
 formulas_df.to_csv(output_formulas_path, index=False, quoting=1)
-print(f"\nBLUE formulas saved to: {output_formulas_path}")
-print(f"Generated {len(formulas)} formulas for {len(model_data['env'].unique())} environments")
+print(f"Generated {len(formulas)} BLUE formulas for {len(model_data['env'].unique())} environments. Saved to: {output_formulas_path}")
