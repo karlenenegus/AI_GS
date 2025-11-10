@@ -1,3 +1,49 @@
+#!/usr/bin/env python3
+"""
+Encode genotypes for genomic prediction.
+
+Encodes genotype data from HapMap format into embeddings using various encoding methods
+(dosage, kmeans-cosine, nystroem-KPCA). Generates parquet files with phenotype and
+genotype encodings combined.
+
+Arguments:
+    --Training: Set train_type to 'Training' (default)
+    --Validation: Set train_type to 'Validation'
+    --Testing: Set train_type to 'Testing'
+    -o, --output_folder (str): Full path to the output folder (format: './Output_all/train1')
+    --input_hmp_file (str, required): Full path to the genotype file in HapMap format
+    -f, --pheno_file (str, optional): Full path to the phenotype file in CSV format
+        (format: './results/data/phenotype_data.csv'). If not provided, searches for
+        {output_folder}/01_Phenotype_Data_{train_type}.csv
+    -g, --geno_col (str, default='geno'): Name of genotype column in phenotype file
+    -p, --pheno_col (str, default='trait_value'): Name of phenotype column in phenotype file
+    -e, --env_col (str, default='env'): Name of environment column in phenotype file
+    --envs_hold_out (flag, default=False): If True, indicates environments were held out
+        for validation/testing. Requires env_dict_file.csv
+    -d, --env_dict (str, optional): Full path to environment dictionary file. Required if
+        using --envs_hold_out. Column 1 contains unique environment names, column 2 contains
+        1..n assignments
+    --use_config (flag, default=False): Use existing encoding configuration file.
+        Encoding config is automatically saved from training
+    --encoding_window_size (int, default=10): Window size for local window kernel methods
+        and batch conversion of dosage SNPs
+    --shift (int, default=0): How many SNPs each window overlaps. Default of 0 results
+        in non-overlapping windows
+    --encoding_mode (str, optional): Encoding approach. Options: 'kmeans-cosine',
+        'nystroem-KPCA', 'dosage'
+    --nSubsample (int, optional): Used for local window kernel methods. Number of
+        individuals to include when random sampling individuals to construct the Nystroem
+        kernel estimation
+    --kernel_type (str, optional): Kernel type for nystroem-KPCA encoding methods.
+        Options: 'rbf', 'cosine', 'sigmoid', 'polynomial'
+    --gamma (float, optional): Gamma parameter for select kernels within the nystroem-KPCA
+        encoding method. Default interpreted differently based on method
+
+Outputs:
+    - encoding_config.yaml: Encoding configuration (saved during Training)
+    - Parquet files with phenotype data and genotype encodings combined
+"""
+
 import os
 import sys
 import warnings

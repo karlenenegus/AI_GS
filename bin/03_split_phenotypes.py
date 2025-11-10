@@ -1,7 +1,34 @@
 #!/usr/bin/env python3
 """
 Preprocess phenotype data using BLUE values.
-Splits data into train/validation/test sets and scales phenotype values.
+
+Splits data into train/validation/test sets and scales phenotype values by environment.
+Uses stratified group k-fold cross-validation to ensure genotypes are not split across sets.
+
+Arguments:
+    -r, --randomstate (int, required): Random state for reproducible random processes
+    -d, --output_dir (str, required): Output directory for results
+    -f, --input_pheno_file (str, required): Path to phenotype file (CSV or Excel format)
+    -o, --output_pheno_file_prefix (str, required): File prefix for output phenotype files.
+        Will append 'Training', 'Testing', 'Validation' to generate .csv files
+    -m, --mapping_json_path (str, required): Path to JSON mapping file
+    -g, --geno_col (str, default='geno'): Name of genotype column in phenotype file
+    -p, --pheno_col (str, default='BLUE_values'): Name of phenotype column in phenotype file
+    -e, --env_col (str, default='env'): Name of environment column in phenotype file
+    -t, --train_split (float, default=0.80): Percentage of whole dataset used for training
+    -s, --test_split (float, default=0.10): Percentage of whole dataset used for testing
+    -v, --validation_split (float, default=0.10): Percentage of whole dataset used for validation
+    --envs_hold_out (int, default=0): Hold out n environments for testing. If > 0, creates
+        environment dictionary file for unseen environment handling
+
+Note: train_split + test_split + validation_split must equal 1.0
+
+Outputs:
+    - {prefix}_Training.csv: Training set with scaled phenotypes
+    - {prefix}_Validation.csv: Validation set with scaled phenotypes
+    - {prefix}_Testing.csv: Testing set with scaled phenotypes
+    - keep_geno_prefixes_{split}.txt: Genotype lists for each split
+    - conversion_keys/env_dict_file.csv: Environment dictionary (if envs_hold_out > 0)
 """
 
 import sys
@@ -127,7 +154,7 @@ if env_hold_out:
         'env': unique_envs,
         'env_index': range(1, len(unique_envs) + 1)
     })
-    env_df.to_csv(output_dir / 'conversion_keys' / 'env_dict_file.csv', index=False)
+    env_df.to_csv(output_dir / 'data' / 'encoding_keys' / 'env_dict_file.csv', index=False)
 
 # Create train/test/val splits based on folds
 if k_fold == 1:

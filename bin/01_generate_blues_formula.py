@@ -1,7 +1,27 @@
 #!/usr/bin/env python3
 """
 Generate BLUE (Best Linear Unbiased Estimator) formulas for mixed model analysis.
+
 Processes filtered phenotype data and generates environment-specific formulas for BLUE calculations.
+Creates mixed model formulas with random effects based on the column mapping configuration.
+
+Arguments:
+    -o, --output_dir (str, required): Output directory for results (should contain filtered data
+        from 00_filter_phenotype_data.py)
+    -p, --input_pheno_path (str, optional): Path to filtered phenotype data CSV
+        (default: {output_dir}/data/filtered_phenotype_data.csv)
+    -f, --output_formulas_path (str, optional): Path to output formulas CSV file
+        (default: {output_dir}/data/BLUEs_formulas.csv)
+    -d, --output_pheno_path (str, optional): Path to output phenotype data CSV file
+        (default: {output_dir}/data/BLUEs_formula_phenotype_data.csv)
+    -m, --mapping_json_path (str, optional): Path to mapping JSON file
+        (default: {output_dir}/data/pheno_column_mapping.json)
+    -b, --filter_by_name (str, optional): Path to file containing geno_env combinations to filter by
+        (one per line, format: geno_env). Only environments with these combinations will be processed.
+
+Outputs:
+    - BLUE formulas CSV file with environment-specific formulas
+    - Phenotype data CSV file prepared for BLUE calculation
 """
 
 import sys

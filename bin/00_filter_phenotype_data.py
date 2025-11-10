@@ -1,7 +1,26 @@
 #!/usr/bin/env python3
 """
 Filter phenotype data for genomic prediction analysis.
+
 Removes outliers, missing values, and genotypes with insufficient observations.
+Filters data using IQR-based outlier detection and ensures genotypes have
+observations across a minimum number of environments.
+
+Arguments:
+    -m, --mapping_json_path (str, required): Path to column mapping JSON file for phenotype data
+    -f, --input_pheno_path (str, required): Path to phenotype file (CSV format)
+    -o, --output_pheno_path (str, required): Path to output filtered phenotype file (CSV format)
+    -g, --geno_col (str, required): Name of genotype column in input phenotype file
+    -p, --pheno_col (str, required): Name of phenotype column in input phenotype file
+    -e, --env_col (str, required): Name of environment column in input phenotype file
+    -i, --iqr_multiplier (float, default=1.5): IQR multiplier for outlier filtering
+    -n, --min_environments (int, default=2): Minimum number of environments a genotype must have
+    -b, --filter_by_name (str, optional): Path to file containing geno_env combinations to keep
+        (one per line, format: geno_env)
+
+Outputs:
+    - Filtered phenotype CSV file with outliers and insufficient genotypes removed
+    - Column mapping JSON file (created/updated if needed)
 """
 
 import sys
