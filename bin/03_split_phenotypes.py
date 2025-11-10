@@ -26,8 +26,9 @@ from lib.preprocess_phenotypes_fns import (
 parser = argparse.ArgumentParser(description="Preprocess phenotype data using BLUE values")
 
 parser.add_argument("-r", "--randomstate", type=int, required=True, help="Random state for reproducible random processes")
-parser.add_argument("-d", "--output_dir", type=str, required=True, help="Output directory for results")
+parser.add_argument("-d", "--output_dir", type=str, required=True, help="Output directory for additional")
 parser.add_argument("-f", "--input_pheno_file", type=str, required=True, help="Path to phenotype file (CSV or Excel format)")
+parser.add_argument("-o", "--output_pheno_file_prefix", type=str, required=True, help="File prefix for output phenotype file. Will append 'Training', 'Testing', 'Validation' prefix to generate .csv")
 parser.add_argument("-m", "--mapping_json_path", type=str, required=True, help="Path to json ")
 
 
@@ -39,7 +40,7 @@ parser.add_argument("-t", "--train_split", type=float, default=0.80, help="Perce
 parser.add_argument("-s", "--test_split", type=float, default=0.10, help="Percentage of whole dataset used to generate the test fraction")
 parser.add_argument("-v", "--validation_split", type=float, default=0.10, help="Percentage of whole dataset used to generate the validation fraction")
 
-parser.add_argument("--env-hold-out", action="store_true", default=False, help="Hold out an environment for testing (default: False)")
+parser.add_argument("--envs_hold_out", type = int, default=0, help="Hold out n environments for testing (default: False)")
 
 args = parser.parse_args()
 
@@ -48,17 +49,20 @@ if args.validation_split + args.test_split + args.train_split != 1:
 
 # Setup
 output_dir = Path(args.output_dir)
-env_hold_out = args.env_hold_out
+if args.envs_hold_out > 0:
+    env_hold_out = True
+else:
+    env_hold_out = False
 
 print("Starting phenotype preprocessing...")
 
 # Load BLUE results
-blue_results_file = Path(args.input_pheno_file)
-if not blue_results_file.exists():
-    raise FileNotFoundError(f"BLUE results file not found: {blue_results_file}")
+input_pheno_file = Path(args.input_pheno_file)
+if not input_pheno_file.exists():
+    raise FileNotFoundError(f"BLUE results file not found: {input_pheno_file}")
 
-data_blues = pd.read_csv(blue_results_file)
-print(f"Loaded {len(data_blues)} rows from BLUE results")
+pheno_data = pd.read_csv(input_pheno_file)
+print(f"Loaded {len(pheno_data)} rows from phenotype file")
 
 # Load column mapping to get trait name
 mapping_file = Path(args.mapping_json_path)
@@ -70,7 +74,7 @@ with open(mapping_file, 'r') as f:
 
 # Save genotype list for filtering
 geno_list_file = output_dir / "data" / "keep_geno_prefixes.txt"
-data_blues[args.geno_col].astype(str).to_csv(
+pheno_data[args.geno_col].astype(str).to_csv(
     geno_list_file,
     index=False,
     header=False
@@ -80,21 +84,21 @@ print(f"Saved genotype list to: {geno_list_file}")
 # Handle special case: (1.0, 0, 0) - all data goes to one split
 if args.train_split == 1.0 and args.test_split == 0 and args.validation_split == 0:
     print("Special case: All data will be assigned to training set")
-    data_blues['fold'] = 0  # All in fold 0
+    pheno_data['fold'] = 0  # All in fold 0
     k_train = 1
     k_val = 0
     k_test = 0
     k_fold = 1
 elif args.test_split == 1.0 and args.train_split == 0 and args.validation_split == 0:
     print("Special case: All data will be assigned to test set")
-    data_blues['fold'] = 0  # All in fold 0
+    pheno_data['fold'] = 0  # All in fold 0
     k_train = 0
     k_val = 0
     k_test = 1
     k_fold = 1
 elif args.validation_split == 1.0 and args.train_split == 0 and args.test_split == 0:
     print("Special case: All data will be assigned to validation set")
-    data_blues['fold'] = 0  # All in fold 0
+    pheno_data['fold'] = 0  # All in fold 0
     k_train = 0
     k_val = 1
     k_test = 0
@@ -113,17 +117,17 @@ else:
     k_fold = int(k_fold)
 
     split_kfold = StratifiedGroupKFold(n_splits=int(k_fold), shuffle=True, random_state=args.randomstate)
-    data_blues['fold'] = -1
+    pheno_data['fold'] = -1
 
-    for fold_number, (_, test_idx) in enumerate(split_kfold.split(data_blues, data_blues[args.env_col], data_blues[args.geno_col])):
-        test_genotypes = data_blues[args.geno_col].values[test_idx]
-        data_blues.loc[data_blues[args.geno_col].isin(test_genotypes), "fold"] = fold_number
+    for fold_number, (_, test_idx) in enumerate(split_kfold.split(pheno_data, pheno_data[args.env_col], pheno_data[args.geno_col])):
+        test_genotypes = pheno_data[args.geno_col].values[test_idx]
+        pheno_data.loc[pheno_data[args.geno_col].isin(test_genotypes), "fold"] = fold_number
 
 # Handle environment holdout
 if env_hold_out:
-    unique_envs = data_blues[args.env_col].unique()
+    unique_envs = pheno_data[args.env_col].unique()
     np.random.seed(args.randomstate)
-    env_to_hold_out = np.random.choice(unique_envs)
+    env_to_hold_out = np.random.choice(unique_envs, size=args.env_hold_out)
     
     print(f"Holding out environment: {env_to_hold_out}")
     
@@ -138,26 +142,26 @@ if env_hold_out:
 if k_fold == 1:
     # Special case: all data in one split
     if args.train_split == 1.0:
-        train_idx = np.ones(len(data_blues), dtype=bool)
-        test_idx = np.zeros(len(data_blues), dtype=bool)
-        val_idx = np.zeros(len(data_blues), dtype=bool)
+        train_idx = np.ones(len(pheno_data), dtype=bool)
+        test_idx = np.zeros(len(pheno_data), dtype=bool)
+        val_idx = np.zeros(len(pheno_data), dtype=bool)
     elif args.test_split == 1.0:
-        train_idx = np.zeros(len(data_blues), dtype=bool)
-        test_idx = np.ones(len(data_blues), dtype=bool)
-        val_idx = np.zeros(len(data_blues), dtype=bool)
+        train_idx = np.zeros(len(pheno_data), dtype=bool)
+        test_idx = np.ones(len(pheno_data), dtype=bool)
+        val_idx = np.zeros(len(pheno_data), dtype=bool)
     else:  # validation_split == 1.0
-        train_idx = np.zeros(len(data_blues), dtype=bool)
-        test_idx = np.zeros(len(data_blues), dtype=bool)
-        val_idx = np.ones(len(data_blues), dtype=bool)
+        train_idx = np.zeros(len(pheno_data), dtype=bool)
+        test_idx = np.zeros(len(pheno_data), dtype=bool)
+        val_idx = np.ones(len(pheno_data), dtype=bool)
 else:
     fold_range = range(k_fold)
-    train_idx = np.isin(data_blues['fold'], fold_range[:int(k_train)])
-    test_idx = np.isin(data_blues['fold'], fold_range[int(k_train):int(k_train+k_val)] if k_val > 0 else [])
-    val_idx = np.isin(data_blues['fold'], fold_range[int(k_train+k_val):] if k_val > 0 else fold_range[int(k_train):])
+    train_idx = np.isin(pheno_data['fold'], fold_range[:int(k_train)])
+    test_idx = np.isin(pheno_data['fold'], fold_range[int(k_train):int(k_train+k_val)] if k_val > 0 else [])
+    val_idx = np.isin(pheno_data['fold'], fold_range[int(k_train+k_val):] if k_val > 0 else fold_range[int(k_train):])
 
 # Adjust splits if environment holdout is enabled
 if env_hold_out:
-    env_holdout_idx = np.isin(data_blues[args.env_col], [env_to_hold_out])
+    env_holdout_idx = np.isin(pheno_data[args.env_col], [env_to_hold_out])
     
     # Exclude the held-out environment from train and val
     train_idx = train_idx & ~env_holdout_idx
@@ -166,16 +170,18 @@ if env_hold_out:
     # Add the full held-out environment to test set
     test_idx = test_idx | env_holdout_idx
 
-# Use the trait name from BLUE results (should be consistent across rows)
-if 'trait_name' not in data_blues.columns:
-    data_blues['trait_name'] = args.pheno_col
+# Use the trait name from phenotypes
+if 'trait_name' not in pheno_data.columns:
+    pheno_data['trait_name'] = args.pheno_col
+elif args.pheno_col != 'trait_value':
+    pheno_data['trait_name'] = args.pheno_col + '_' + pheno_data['trait_name'].astype(str)
 
 trait_name = 'trait_name'
 
 # Create split datasets
-data_train = data_blues.iloc[train_idx].copy()
-data_test = data_blues.iloc[test_idx].copy()
-data_val = data_blues.iloc[val_idx].copy()
+data_train = pheno_data.iloc[train_idx].copy()
+data_test = pheno_data.iloc[test_idx].copy()
+data_val = pheno_data.iloc[val_idx].copy()
 
 print(f"Train: {len(data_train)} rows, Test: {len(data_test)} rows, Val: {len(data_val)} rows")
 
@@ -257,9 +263,9 @@ data_val_scaled = pd.concat(data_val_scaled, ignore_index=True)
 data_test_scaled = pd.concat(data_test_scaled, ignore_index=True)
 
 # Write output files
-data_train_scaled.to_csv(output_dir/ 'data' / '01_Phenotype_Data_Training.csv', index=False)
-data_val_scaled.to_csv(output_dir / 'data' / '01_Phenotype_Data_Validation.csv', index=False)
-data_test_scaled.to_csv(output_dir / 'data' / '01_Phenotype_Data_Testing.csv', index=False)
+data_train_scaled.to_csv(f'{args.output_pheno_file_prefix}_Training.csv', index=False)
+data_val_scaled.to_csv(f'{args.output_pheno_file_prefix}_Validation.csv', index=False)
+data_test_scaled.to_csv(f'{args.output_pheno_file_prefix}_Testing.csv', index=False)
 
 print(f"Saved preprocessed data to: {output_dir}")
 print("Preprocessing completed successfully")

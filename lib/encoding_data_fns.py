@@ -128,8 +128,9 @@ class PhenotypeData:
         
         Creates dictionaries during training, loads them during validation/testing.
         """
-        env_dict_path = f'{output_folder}/conversion_keys/env_dict_file.csv'
-        trait_dict_path = f'{output_folder}/conversion_keys/trait_dict_file.csv'
+        os.makedirs(f'{output_folder}/encoding_keys/', exist_ok=True)
+        env_dict_path = f'{output_folder}/encoding_keys/env_dict_file.csv'
+        trait_dict_path = f'{output_folder}/encoding_keys/trait_dict_file.csv'
         
         # During training, create dictionaries
         if train_type == "Training":
@@ -179,7 +180,7 @@ class PhenotypeData:
         # Convert columns to numeric
         phenotypes_numeric = self.phenotypes_long.copy()
         with pd.option_context('future.no_silent_downcasting', True):
-            phenotypes_numeric[self.env_column_name].replace(env_dict, inplace=True)
+            phenotypes_numeric[self.env_column_name] = phenotypes_numeric[self.env_column_name].replace(env_dict)
             
             if phenotypes_numeric[self.env_column_name].isna().any():
                 unmatched_env = phenotypes_numeric[phenotypes_numeric[self.env_column_name].isna()]
@@ -188,7 +189,7 @@ class PhenotypeData:
                     f"Unmatched entries:\n{unmatched_env}"
                 )
             
-            phenotypes_numeric['variable'].replace(trait_dict, inplace=True)
+            phenotypes_numeric['variable'] = phenotypes_numeric['variable'].replace(trait_dict)
             
             if phenotypes_numeric['variable'].isna().any():
                 unmatched_trait = phenotypes_numeric[phenotypes_numeric['variable'].isna()]
@@ -308,7 +309,7 @@ class Make_Embeddings():
         # Combine chromosome and position to create new column names
         names = np.array(chr_long, dtype = object) + "_" + np.array(pos_long, dtype = object)
         data.columns = names
-        self.snp_data = data
+        return data
         
     def _convert_SNP2Numeric(self, input_column: pd.Series, encoding_mode: str):
         """Convert nucleotide SNP data to allele dosage format and standardize."""
@@ -489,12 +490,12 @@ class Make_Embeddings():
                 selected_features = x.columns.tolist()
                 X_selected = x[selected_features]
                 
-                if not os.path.exists(f'{output_folder}/conversion_keys/selected_features/'):
-                    os.makedirs(f'{output_folder}/conversion_keys/selected_features/')
+                if not os.path.exists(f'{output_folder}/encoding_keys/selected_features/'):
+                    os.makedirs(f'{output_folder}/encoding_keys/selected_features/')
                     
-                joblib.dump(selected_features, f'{output_folder}/conversion_keys/selected_features/selected_features_window{st}-{ed}.pkl')
+                joblib.dump(selected_features, f'{output_folder}/encoding_keys/selected_features/selected_features_window{st}-{ed}.pkl')
             else:
-                selected_features_path = f'{output_folder}/conversion_keys/selected_features/selected_features_window{st}-{ed}.pkl'
+                selected_features_path = f'{output_folder}/encoding_keys/selected_features/selected_features_window{st}-{ed}.pkl'
                 if not os.path.exists(selected_features_path):
                     raise FileNotFoundError(
                         f"'{selected_features_path}' does not exist! "
@@ -537,7 +538,7 @@ class Make_Embeddings():
             
                 # Create output directories
                 for dir_name in ['nystroem', 'pca', 'filter_variance', 'selected_features']:
-                    dir_path = f'{output_folder}/conversion_keys/{dir_name}/'
+                    dir_path = f'{output_folder}/encoding_keys/{dir_name}/'
                     if not os.path.exists(dir_path):
                         os.makedirs(dir_path)
                 
@@ -556,14 +557,14 @@ class Make_Embeddings():
                 )
                 
                 # Save transforms
-                joblib.dump(nystroem, f'{output_folder}/conversion_keys/nystroem/nystroem_window{st}-{ed}.pkl')
-                joblib.dump(pca2, f'{output_folder}/conversion_keys/pca/pca_window{st}-{ed}.pkl')
-                joblib.dump(filter_variance, f'{output_folder}/conversion_keys/filter_variance/filter_variance_window{st}-{ed}.pkl')
+                joblib.dump(nystroem, f'{output_folder}/encoding_keys/nystroem/nystroem_window{st}-{ed}.pkl')
+                joblib.dump(pca2, f'{output_folder}/encoding_keys/pca/pca_window{st}-{ed}.pkl')
+                joblib.dump(filter_variance, f'{output_folder}/encoding_keys/filter_variance/filter_variance_window{st}-{ed}.pkl')
 
             else:
-                nystroem = joblib.load(f'{output_folder}/conversion_keys/nystroem/nystroem_window{st}-{ed}.pkl')
-                pca2 = joblib.load(f'{output_folder}/conversion_keys/pca/pca_window{st}-{ed}.pkl')
-                filter_variance = joblib.load(f'{output_folder}/conversion_keys/filter_variance/filter_variance_window{st}-{ed}.pkl')
+                nystroem = joblib.load(f'{output_folder}/encoding_keys/nystroem/nystroem_window{st}-{ed}.pkl')
+                pca2 = joblib.load(f'{output_folder}/encoding_keys/pca/pca_window{st}-{ed}.pkl')
+                filter_variance = joblib.load(f'{output_folder}/encoding_keys/filter_variance/filter_variance_window{st}-{ed}.pkl')
                 
                 x_filtered = filter_variance.transform(x)
                 x_transformed = nystroem.transform(x_filtered)
@@ -582,13 +583,13 @@ class Make_Embeddings():
  
                 x_transformed = x @ landmarks.T
 
-                if not os.path.exists(f'{output_folder}/conversion_keys/landmarks/'):
-                    os.makedirs(f'{output_folder}/conversion_keys/landmarks/')
+                if not os.path.exists(f'{output_folder}/encoding_keys/landmarks/'):
+                    os.makedirs(f'{output_folder}/encoding_keys/landmarks/')
                 
-                joblib.dump(landmarks, f'{output_folder}/conversion_keys/landmarks/landmarks_window{st}-{ed}.pkl')
+                joblib.dump(landmarks, f'{output_folder}/encoding_keys/landmarks/landmarks_window{st}-{ed}.pkl')
 
             else:
-                landmarks_path = f'{output_folder}/conversion_keys/landmarks/landmarks_window{st}-{ed}.pkl'
+                landmarks_path = f'{output_folder}/encoding_keys/landmarks/landmarks_window{st}-{ed}.pkl'
                 if not os.path.exists(landmarks_path):
                     raise FileNotFoundError(
                         f"'{landmarks_path}' does not exist! "
@@ -654,7 +655,7 @@ class Make_Embeddings():
         std_data, std_dicts = zip(*[self._convert_SNP2Numeric(snp_data.iloc[:, i], self.encoding_mode) for i in range(snp_data.shape[1]) if len(snp_data.iloc[:, i].value_counts().drop("NN", errors="ignore"))>1]) 
         
         full_std_dict = {k: v for d in std_dicts for k, v in d.items()}
-        save_json(full_std_dict, f'{self.output_dir}/conversion_keys/{self.std_dict_file}')
+        save_json(full_std_dict, f'{self.output_dir}/encoding_keys/{self.std_dict_file}')
         
         # TODO: Uncomment when LDWindowAnalyzer is available
         # analyzer = LDWindowAnalyzer(
@@ -747,7 +748,7 @@ class Make_Embeddings():
         snp_data = self._filter_SNP_data(self.snp_data, ind_names_to_keep)
         self.snp_index = snp_data.index
         
-        std_dict = load_json(f'{self.output_dir}/conversion_keys/{self.std_dict_file}')
+        std_dict = load_json(f'{self.output_dir}/encoding_keys/{self.std_dict_file}')
         
         std_data = [self._apply_standardization(snp_data.iloc[:, i], std_dict) for i in range(snp_data.shape[1]) if snp_data.iloc[:, i].name in std_dict.keys()]
         
@@ -886,7 +887,7 @@ class Make_Embeddings():
             # Convert to PyArrow Table
             table = pa.Table.from_pandas(batch_masked)
 
-            output_path = f"{self.output_dir}/data/parquet_{file_prefix}/" 
+            output_path = f"{self.output_dir}/data/Encodings_{file_prefix}_parquet/" 
             os.makedirs(output_path, exist_ok=True)
             pq.write_to_dataset(table, output_path)
 
