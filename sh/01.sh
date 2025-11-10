@@ -68,14 +68,41 @@ python bin/03_split_phenotypes.py \
     --env_col env \
 
 
+# Step 5: Encode genotypes
+# echo "Step 5: Encoding genotypes..."
 # python bin/04_encode_genotypes.py \
-#  ....
-#    --input_hmp_file ./data/geno/SNPs_Final_2k.hmp \
+#     --Training \
+#     --output_folder ${OUTPUT_DIR} \
+#     --input_hmp_file ./data/geno/SNPs_Final_2k.hmp \
+#     --pheno_file ${OUTPUT_DIR}/data/01_Phenotype_Data_Training.csv \
+#     --geno_col geno \
+#     --pheno_col BLUE_values \
+#     --env_col env \
 #     --encoding_window_size 10 \
 #     --shift 0 \
 #     --nSubsample 0 \
 #     --kernel_type None \
 #     --gamma None \
 #     --encoding_mode dosage
+
+# python bin/04_encode_genotypes.py \
+#     --Validation \
+#     --output_folder ${OUTPUT_DIR} \
+#     --input_hmp_file ./data/geno/SNPs_Final_2k.hmp \
+#     --pheno_file ${OUTPUT_DIR}/data/01_Phenotype_Data_Validation.csv \
+#     --geno_col geno \
+#     --pheno_col BLUE_values \
+#     --env_col env \
+#     --use_config
+
+# python bin/04_encode_genotypes.py \
+#     --Testing \
+#     --output_folder ${OUTPUT_DIR} \
+#     --input_hmp_file ./data/geno/SNPs_Final_2k.hmp \
+#     --pheno_file ${OUTPUT_DIR}/data/01_Phenotype_Data_Testing.csv \
+#     --geno_col geno \
+#     --pheno_col BLUE_values \
+#     --env_col env \
+#     --use_config
 
 echo "Phenotype preprocessing complete!" 

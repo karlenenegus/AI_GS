@@ -15,14 +15,17 @@ echo "Downloading Public Genotype & Phenotype Data"
 echo "================================================"
 echo ""
 
+
+### Data has been removed from Cyverse. Currently unable to pull data from new location in Box. Download manually from curl locations below:
+# curl -L -J "https://cornell.app.box.com/s/o7wtp1ewuqlw3dalr1920lungxnomnrg" -O ./data/geno/ZeaGBSv27.vcf.gz
+# curl -L -J "https://cornell.app.box.com/s/yc95tqcgkyh4vtjwtbi3m3cfha47i748" -O ./data/pheno/Hung_etal_2012_PNAS.zip
+
 # # Genotype Data
 # mkdir -p data/geno
 
 # echo "Step 1: Downloading genotype data (~2.60GB)..."
 
 # #wget -nc https://de.cyverse.org/api/download?path=%2Fiplant%2Fhome%2Fshared%2Fpanzea%2Fgenotypes%2FGBS%2Fv27%2FZeaGBSv27_publicSamples_imputedV5_AGPv4-181023.vcf.gz -O ./data/geno/ZeaGBSv27.vcf.gz
-
-# curl -L -J "https://cornell.app.box.com/s/yc95tqcgkyh4vtjwtbi3m3cfha47i748" -O ./data/geno/ZeaGBSv27.vcf.gz
 
 # if [ ! -f ./data/geno/ZeaGBSv27.vcf.gz ]; then
 #     echo "Error: Genotype file download failed." >&2
@@ -36,8 +39,6 @@ echo ""
 # echo "Step 2: Downloading phenotype data (~4.7MB)..."
 
 # #wget -nc https://de.cyverse.org/api/download?path=%2Fiplant%2Fhome%2Fshared%2Fpanzea%2Fphenotypes%2FHung_etal_2012_PNAS_data-120523.zip -O ./data/pheno/Hung_etal_2012_PNAS.zip
-
-# curl -L -J "https://cornell.app.box.com/s/yc95tqcgkyh4vtjwtbi3m3cfha47i748" -O ./data/pheno/Hung_etal_2012_PNAS.zip ### fix this it won't work
 
 # if [ ! -f ./data/pheno/Hung_etal_2012_PNAS.zip ]; then
 #     echo "Error: Phenotype file download failed." >&2

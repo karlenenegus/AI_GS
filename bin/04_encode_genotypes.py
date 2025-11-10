@@ -11,14 +11,14 @@ parser.add_argument("--Validation", dest="train_type", action="store_const", con
 parser.add_argument("--Testing", dest="train_type", action="store_const", const="Testing", help="Set train_type to 'Test'")
 parser.set_defaults(train_type="Training")
 parser.add_argument("-o", "--output_folder", help="Full path to the output folder, format like: './Output_all/train1'")
-parser.add_argument("-h", "--input_hmp_file", type=str, required=True, help="Full path to the genotype file in HapMap format")
+parser.add_argument("--input_hmp_file", type=str, required=True, help="Full path to the genotype file in HapMap format")
 
 parser.add_argument("-f", "--pheno_file", default=None, help="Optional. Full path to the phenotype file in CSV format, format like: './Data/PHENO/phenotype_data.csv'")
 parser.add_argument("-g", "--geno_col", default="geno", help="The name of the genotype column in the phenotype file (default: 'geno' - standard name)")
 parser.add_argument("-p", "--pheno_col", default="trait_value", help="The name of the phenotype column in the phenotype file (default: 'trait_value' - standard name)")
 parser.add_argument("-e", "--env_col", default="env", help="The name of the environment column in the phenotype file (default: 'env' - standard name)")
 
-
+parser.add_argument("--use_config", action="store_true", default=False, help="Use existing encoding configuration file. Encoding config file is automatically saved from training.")
 parser.add_argument("--encoding_window_size", type=int, default=10, help="window size for local window kernel methods and batch conversion of dosage snps")
 parser.add_argument("--shift", type=int, default=0, help="How many SNPs each window overlaps. Default of 0 results in non-overlapping windows")
 parser.add_argument("--nSubsample", type=int, default=100, help="Used for local window kernel methods. Number of individuals to include when random sampling individuals to construct the Nystroem kernel estimation.")
@@ -31,31 +31,36 @@ args = parser.parse_args()
 
 hmp_metadata_names = ["rs#", "alleles", "chrom", "pos", "strand", "assembly#", "center", "protLSID", "assayLSID", "panelLSID", "QCcode"]
 
-pheno_data_file = f'{args.output_folder}/01_Phenotype_Data_{args.train_type}.csv'
-if not os.path.exists(pheno_data_file):
-    warnings.warn(f"Phenotype data file location does not match expected: {pheno_data_file}. \n Please run 02_split_phenotypes.py first.")
+pheno_data_file = args.pheno_file
+if not Path(pheno_data_file).exists():
+    pheno_data_file = f'{args.output_folder}/01_Phenotype_Data_{args.train_type}.csv'
+    if not os.path.exists(args.pheno_file):
+        warnings.warn(f"Phenotype data file location does not match expected: {args.pheno_file}. \n Please run 02_split_phenotypes.py first.")
 
 get_phenotypes = PhenotypeData(geno_column_name=args.geno_col, pheno_column_names=[args.pheno_col], env_column_name=args.env_col, phenotype_file=pheno_data_file)
 
 pheno_data = get_phenotypes.generate_phenotype_data(output_folder=args.output_folder, train_type=args.train_type, unseen_environments=True)
 
-if args.train_type == "Training":
-    encoding_config = EncodingConfig(
-        encoding_window_size=9,
-        shift=0,
-        nSubsample=0,
-        kernel_type="cosine",
-        gamma=None,
-        encoding_mode="dosage",
-        encoding_length=None # will be filled in later with the actual encoding size
-    )
-    encoding_config.save(f"{args.output_folder}/encoding_config.yaml")
-else:
+if args.use_config:
     encoding_config = EncodingConfig.load(f"{args.output_folder}/encoding_config.yaml")
+else:
+    if args.train_type == "Training":
+        encoding_config = EncodingConfig(
+            encoding_window_size=args.encoding_window_size,
+            shift=args.shift,
+            nSubsample=args.nSubsample,
+            kernel_type=args.kernel_type,
+            gamma=args.gamma,
+            encoding_mode=args.encoding_mode,
+            encoding_length=None # will be filled in later with the actual encoding size
+        )
+    else:
+        value_error_message = f"Encoding configuration file not found: {args.output_folder}/encoding_config.yaml. \n This file is required for validation and testing sets. Please run training first to create it."
+        raise ValueError(value_error_message)
 
 print('start emb ->')
 
-mk_emb = Make_Embeddings(input_file=args.hmp_file, hmp_metadata_column_names=hmp_metadata_names, encoding_config=encoding_config, output_dir=args.output_folder)
+mk_emb = Make_Embeddings(input_file=args.input_hmp_file, hmp_metadata_column_names=hmp_metadata_names, encoding_config=encoding_config, output_dir=args.output_folder)
 
 if args.train_type == "Training":
     mk_emb.training_mode(file_prefix=args.train_type, ind_names_to_keep=pheno_data[args.geno_col])
