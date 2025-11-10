@@ -1,0 +1,2 @@
+{"trait": "gdd_dta", "trait_value": null, "trait_name": null, "env": "env", "family": "pop", "geno": "geno_code", "field": "field", "rep": "rep", "set": "pblock", "block": "block", "row": "rowposition", "column": "rangeposition", 
+"random_effects_variables": ["field", "rep_field", "pblock_rep_field", "block_pblock_rep_field", "rowposition_rep_field", "rangeposition_rep_field"]}
