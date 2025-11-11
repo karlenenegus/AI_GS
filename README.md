@@ -22,7 +22,7 @@ Steps:
 ### Environment Setup
 1. Activate the conda environment:
    ```bash
-   source <path_to_conda_environment>/bin/activate
+   micromamba create -f environment.yaml
    ```
 2. Set Julia environment variables (adjust paths as needed):
    ```bash
