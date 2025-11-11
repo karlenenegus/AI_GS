@@ -63,7 +63,7 @@ class EncodingConfig:
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w") as f:
             yaml.safe_dump(self._to_dict(), f, sort_keys=False)
-        print(f"✅ EncodingConfig saved to {path}")
+        print(f"EncodingConfig saved to {path}")
 
     @classmethod
     def load(cls, path: str) -> "EncodingConfig":
@@ -693,7 +693,7 @@ class Make_Embeddings():
             f'window_{w}': [list(full_std_dict.keys())[i] for i in range(start, end)]
             for w, (start, end) in enumerate(window_range_list)
         }
-        save_json(window_names_dict, f"{self.output_dir}/SNPsPerWindow.json")
+        save_json(window_names_dict, f"{self.output_dir}/encoding_keys/SNPsPerWindow.json")
         
         if self.encoding_mode == "dosage":
             encodings = np.zeros((n_individuals, len(full_std_dict.keys())))
@@ -768,7 +768,7 @@ class Make_Embeddings():
         n_individuals = std_data.shape[1]
         
         #Parallelize this in the future
-        window_names_dict = load_json(f"{self.output_dir}/SNPsPerWindow.json")
+        window_names_dict = load_json(f"{self.output_dir}/encoding_keys/SNPsPerWindow.json")
 
         if self.encoding_mode == "dosage":
             encodings = np.zeros((n_individuals, len(std_dict.keys())))

@@ -1,5 +1,7 @@
 # AI Genomic Selection Pipeline - Shell Script Version
 
+***Project in progress some components may not be fully functional.***
+
 This directory contains code for processing phenotype and genotype data for use with the AI-GS pipeline.
 
 ## Overview
@@ -73,21 +75,21 @@ Results are saved in the `OUTPUT_DIR` directory structure:
 ```
 results/
 ├── data/
-│   ├── 00_filtered_phenotype_data.csv          # Step 0: Filtered phenotype data
-│   ├── 01_BLUEs_formulas.csv                   # Step 1: BLUE formulas
-│   ├── 01_BLUEs_formula_phenotype_data.csv     # Step 1: Phenotype data with formulas
-│   ├── 02_BLUEs_results.csv                    # Step 2: Calculated BLUE values
-│   ├── 03_Phenotype_Data_Training.csv          # Step 3: Training set
-│   ├── 03_Phenotype_Data_Validation.csv        # Step 3: Validation set
-│   └── 03_Phenotype_Data_Testing.csv           # Step 3: Testing set
-├── encoding_config.yaml                        # Step 4: Encoding configuration (created during Training)
-├── Encodings_Training_parquet/                 # Step 4: Training encodings (parquet files)
-│   ├── encodings.pkl                           # Encodings pickle file
+│   ├── 00_filtered_phenotype_data.csv         
+│   ├── 01_BLUEs_formulas.csv                  
+│   ├── 01_BLUEs_formula_phenotype_data.csv     
+│   ├── 02_BLUEs_results.csv                    
+│   ├── 03_Phenotype_Data_Training.csv          
+│   ├── 03_Phenotype_Data_Validation.csv        
+│   └── 03_Phenotype_Data_Testing.csv           
+├── encoding_config.yaml                      
+├── Encodings_Training_parquet/                 
+│   ├── encodings.pkl                         
 │   └── [parquet data files]
-├── Encodings_Validation_parquet/               # Step 4: Validation encodings
+├── Encodings_Validation_parquet/               
 │   ├── encodings.pkl
 │   └── [parquet data files]
-└── Encodings_Testing_parquet/                   # Step 4: Testing encodings
+└── Encodings_Testing_parquet/                 
     ├── encodings.pkl
     └── [parquet data files]
 ```
@@ -153,4 +155,3 @@ Encodes genotype data for AI genomic selection models. Creates parquet files wit
 - `Encodings_Validation_parquet/` with parquet files
 - `Encodings_Testing_parquet/` with parquet files
 
-## Notes

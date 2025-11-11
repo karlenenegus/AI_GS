@@ -73,18 +73,18 @@ python bin/04_encode_genotypes.py \
     --pheno_file ${OUTPUT_DIR}/data/03_Phenotype_Data_Training.csv \
     --encoding_mode dosage
 
-# python bin/04_encode_genotypes.py \
-#     --Validation \
-#     --output_folder ${OUTPUT_DIR} \
-#     --input_hmp_file ${INPUT_FILE_GENO} \
-#     --pheno_file ${OUTPUT_DIR}/data/03_Phenotype_Data_Validation.csv \
-#     --use_config
+python bin/04_encode_genotypes.py \
+    --Validation \
+    --output_folder ${OUTPUT_DIR} \
+    --input_hmp_file ${INPUT_FILE_GENO} \
+    --pheno_file ${OUTPUT_DIR}/data/03_Phenotype_Data_Validation.csv \
+    --use_config
 
-# python bin/04_encode_genotypes.py \
-#     --Testing \
-#     --output_folder ${OUTPUT_DIR} \
-#     --input_hmp_file ${INPUT_FILE_GENO} \
-#     --pheno_file ${OUTPUT_DIR}/data/03_Phenotype_Data_Testing.csv \
-#     --use_config
+python bin/04_encode_genotypes.py \
+    --Testing \
+    --output_folder ${OUTPUT_DIR} \
+    --input_hmp_file ${INPUT_FILE_GENO} \
+    --pheno_file ${OUTPUT_DIR}/data/03_Phenotype_Data_Testing.csv \
+    --use_config
 
 echo "Phenotype preprocessing complete!" 
