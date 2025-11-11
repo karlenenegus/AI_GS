@@ -1,29 +1,5 @@
 #!/bin/bash
 
-#Submit this script with: sbatch thefilename
-
-#SBATCH --time=0-8:00:00  # max job runtime
-#SBATCH --cpus-per-task=1  # number of processor cores
-#SBATCH --nodes=1  # number of nodes
-#SBATCH --mem=128G  # max memory
-#SBATCH --ntasks-per-node=8   # 36 processor core(s) per node
-#SBATCH --mail-user=knegus@iastate.edu  # email address
-#SBATCH --mail-type=BEGIN,END
-
-#SBATCH --output=./jobs/job.%J.out # tell it to store the output console text to a file called job.<assigned job number>.out
-#SBATCH --error=./jobs/job.%J.err # tell it to store the error messages from the program (if it doesn't write them to normal console output) to a file called job.<assigned job number>.err
-
-cd /work/LAS/jmyu-lab/knegus/AI_GS_NextFlow
-source /work/LAS/jmyu-lab/knegus/AIGS_20250120/bin/activate
-
-module load julia/1.10.4-py311-jctw3xe
-
-export JULIA_DEPOT_PATH=/home/knegus/local/julia_lib
-export JULIA_PROJECT=/home/knegus/local/julia_lib/BLUEs
-
-julia -e 'using Pkg; Pkg.add(["MixedModels", "DataFrames", "CSV", "JSON", "CategoricalArrays", "StatsModels"]); Pkg.precompile()'
-
-
 OUTPUT_DIR='./results'
 mkdir -p ${OUTPUT_DIR}
 
