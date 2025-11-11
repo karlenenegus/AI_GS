@@ -96,13 +96,13 @@ if not mapping_file.exists():
 with open(mapping_file, 'r') as f:
     column_mapping = json.load(f)
 
-# Save genotype list for filtering
-geno_list_file = output_dir / "data" / "keep_geno_prefixes.txt"
-pheno_data[args.geno_col].astype(str).to_csv(
-    geno_list_file,
-    index=False,
-    header=False
-)
+# # Save genotype list for filtering
+# geno_list_file = output_dir / "data" / "keep_geno_prefixes.txt"
+# pheno_data[args.geno_col].astype(str).to_csv(
+#     geno_list_file,
+#     index=False,
+#     header=False
+# )
 
 # Handle special case: (1.0, 0, 0) - all data goes to one split
 if args.train_split == 1.0 and args.test_split == 0 and args.validation_split == 0:
@@ -282,27 +282,5 @@ data_test_scaled = pd.concat(data_test_scaled, ignore_index=True)
 data_train_scaled.to_csv(f'{args.output_pheno_file_prefix}_Training.csv', index=False)
 data_val_scaled.to_csv(f'{args.output_pheno_file_prefix}_Validation.csv', index=False)
 data_test_scaled.to_csv(f'{args.output_pheno_file_prefix}_Testing.csv', index=False)
-
-# Save genotype list for filtering
-prefixes_training_file = output_dir / "data" / f"keep_geno_prefixes_training.txt"
-data_train_scaled['geno'].astype(str).to_csv(
-    prefixes_training_file,
-    index=False,
-    header=False
-)
-
-prefixes_validation_file = output_dir / "data" / f"keep_geno_prefixes_validation.txt"
-data_val_scaled['geno'].astype(str).to_csv(
-    prefixes_validation_file,
-    index=False,
-    header=False
-)
-
-prefixes_testing_file = output_dir / "data" / f"keep_geno_prefixes_testing.txt"
-data_test_scaled['geno'].astype(str).to_csv(
-    prefixes_testing_file,
-    index=False,
-    header=False
-)
 
 print(f"Split complete: Train={len(data_train_scaled)}, Val={len(data_val_scaled)}, Test={len(data_test_scaled)}. Saved to: {output_dir}")

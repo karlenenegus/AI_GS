@@ -714,10 +714,10 @@ class Make_Embeddings():
                 window_output = self._encoding_within_window(window.T, nSubsample=self.nSubsample, size_per_window=self.encoding_window_size, kernel_type=self.kernel_type, gamma=self.gamma, inference=False, output_folder=self.output_dir)
                 encodings[:, i*self.encoding_window_size:(i*self.encoding_window_size)+self.encoding_window_size] = window_output
         
-        out_file_name = f"{self.output_dir}/data/parquet_{file_prefix}/encodings.pkl"
+        out_file_name = f"{self.output_dir}/Encodings_{file_prefix}_parquet/encodings.pkl"
         
-        if not os.path.exists(f"{self.output_dir}/data/parquet_{file_prefix}"):  
-            os.makedirs(f"{self.output_dir}/data/parquet_{file_prefix}")
+        if not os.path.exists(f"{self.output_dir}/Encodings_{file_prefix}_parquet"):  
+            os.makedirs(f"{self.output_dir}/Encodings_{file_prefix}_parquet")
         
         joblib.dump(encodings, out_file_name)
         self.encoding_data = encodings
@@ -789,10 +789,10 @@ class Make_Embeddings():
                 window_output = self._encoding_within_window(window.T, nSubsample=self.nSubsample, size_per_window=self.encoding_window_size, kernel_type=self.kernel_type, gamma=self.gamma, inference=True, output_folder=self.output_dir)
                 encodings[:, i*self.encoding_window_size:(i*self.encoding_window_size)+self.encoding_window_size] = window_output
 
-        if not os.path.exists(f"{self.output_dir}/data/parquet_{file_prefix}"):
-            os.makedirs(f"{self.output_dir}/data/parquet_{file_prefix}")
+        if not os.path.exists(f"{self.output_dir}/Encodings_{file_prefix}_parquet"):
+            os.makedirs(f"{self.output_dir}/Encodings_{file_prefix}_parquet")
         
-        out_file_name = f"{self.output_dir}/data/parquet_{file_prefix}/encodings.pkl"
+        out_file_name = f"{self.output_dir}/Encodings_{file_prefix}_parquet/encodings.pkl"
         joblib.dump(encodings, out_file_name)
         self.encoding_data = encodings
         print(f'Encoding data saved to {out_file_name}', flush=True)
@@ -887,7 +887,7 @@ class Make_Embeddings():
             # Convert to PyArrow Table
             table = pa.Table.from_pandas(batch_masked)
 
-            output_path = f"{self.output_dir}/data/Encodings_{file_prefix}_parquet/" 
+            output_path = f"{self.output_dir}/Encodings_{file_prefix}_parquet/" 
             os.makedirs(output_path, exist_ok=True)
             pq.write_to_dataset(table, output_path)
 
