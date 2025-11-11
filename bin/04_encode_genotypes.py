@@ -14,7 +14,7 @@ Arguments:
     --input_hmp_file (str, required): Full path to the genotype file in HapMap format
     -f, --pheno_file (str, optional): Full path to the phenotype file in CSV format
         (format: './results/data/phenotype_data.csv'). If not provided, searches for
-        {output_folder}/01_Phenotype_Data_{train_type}.csv
+        {output_folder}/data/03_Phenotype_Data_{train_type}.csv
     -g, --geno_col (str, default='geno'): Name of genotype column in phenotype file
     -p, --pheno_col (str, default='trait_value'): Name of phenotype column in phenotype file
     -e, --env_col (str, default='env'): Name of environment column in phenotype file
@@ -90,16 +90,16 @@ args = parser.parse_args()
 hmp_metadata_names = ["rs#", "alleles", "chrom", "pos", "strand", "assembly#", "center", "protLSID", "assayLSID", "panelLSID", "QCcode"]
 
 pheno_data_file = args.pheno_file
-if not Path(pheno_data_file).exists():
-    pheno_data_file = f'{args.output_folder}/01_Phenotype_Data_{args.train_type}.csv'
+if not pheno_data_file or not Path(pheno_data_file).exists():
+    pheno_data_file = f'{args.output_folder}/data/03_Phenotype_Data_{args.train_type}.csv'
     if not os.path.exists(pheno_data_file):
-        # Check parent directory for split files
-        parent_dir = Path(args.pheno_file).parent
-        split_files = list(parent_dir.glob(f'*_{args.train_type}.csv'))
+        # Check data directory for split files
+        data_dir = Path(args.output_folder) / 'data'
+        split_files = list(data_dir.glob(f'*_{args.train_type}.csv'))
         if split_files:
             pheno_data_file = str(split_files[0])
         else:
-            warnings.warn(f"Phenotype data file location does not match expected: {args.pheno_file}. \n Please run 02_split_phenotypes.py first.")
+            warnings.warn(f"Phenotype data file location does not match expected: {pheno_data_file}. \n Please run 03_split_phenotypes.py first.")
 
 get_phenotypes = PhenotypeData(geno_column_name=args.geno_col, pheno_column_names=[args.pheno_col], env_column_name=args.env_col, phenotype_file=pheno_data_file)
 

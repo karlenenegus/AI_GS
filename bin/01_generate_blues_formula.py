@@ -9,11 +9,11 @@ Arguments:
     -o, --output_dir (str, required): Output directory for results (should contain filtered data
         from 00_filter_phenotype_data.py)
     -p, --input_pheno_path (str, optional): Path to filtered phenotype data CSV
-        (default: {output_dir}/data/filtered_phenotype_data.csv)
+        (default: {output_dir}/data/00_filtered_phenotype_data.csv)
     -f, --output_formulas_path (str, optional): Path to output formulas CSV file
-        (default: {output_dir}/data/BLUEs_formulas.csv)
+        (default: {output_dir}/data/01_BLUEs_formulas.csv)
     -d, --output_pheno_path (str, optional): Path to output phenotype data CSV file
-        (default: {output_dir}/data/BLUEs_formula_phenotype_data.csv)
+        (default: {output_dir}/data/01_BLUEs_formula_phenotype_data.csv)
     -m, --mapping_json_path (str, optional): Path to mapping JSON file
         (default: {output_dir}/data/pheno_column_mapping.json)
     -b, --filter_by_name (str, optional): Path to file containing geno_env combinations to filter by
@@ -42,9 +42,9 @@ from lib.preprocess_phenotypes_fns import generate_valid_random_terms
 parser = argparse.ArgumentParser(description="Generate BLUE formulas for mixed model analysis")
 
 parser.add_argument("-o", "--output_dir", type=str, required=True, help="Output directory for results (should contain filtered data from 00_filter_phenotype_data.py)")
-parser.add_argument("-p", "--input_pheno_path", type=str, default=None, help="Path to filtered phenotype data CSV (default: {output_dir}/data/filtered_phenotype_data.csv)")
-parser.add_argument("-f", "--output_formulas_path", type=str, default=None, help="Path to output formulas CSV file (default: {output_dir}/data/BLUEs_formulas.csv)")
-parser.add_argument("-d", "--output_pheno_path", type=str, default=None, help="Path to output formulas CSV file (default: {output_dir}/data/BLUEs_formulas.csv)")
+parser.add_argument("-p", "--input_pheno_path", type=str, default=None, help="Path to filtered phenotype data CSV (default: {output_dir}/data/00_filtered_phenotype_data.csv)")
+parser.add_argument("-f", "--output_formulas_path", type=str, default=None, help="Path to output formulas CSV file (default: {output_dir}/data/01_BLUEs_formulas.csv)")
+parser.add_argument("-d", "--output_pheno_path", type=str, default=None, help="Path to output phenotype data CSV file (default: {output_dir}/data/01_BLUEs_formula_phenotype_data.csv)")
 parser.add_argument("-m", "--mapping_json_path", type=str, default=None, help="Path to mapping JSON file (default: {output_dir}/data/pheno_column_mapping.json)")
 parser.add_argument("-b", "--filter_by_name", type=str, default=None, help="Path to file containing geno_env combinations to filter by (one per line, format: geno_env). Only environments with these combinations will be processed.")
 
@@ -59,13 +59,19 @@ if not output_dir.exists():
 if args.input_pheno_path:
     input_pheno_path = Path(args.input_pheno_path)
 else:
-    input_pheno_path = output_dir / 'data' / 'filtered_phenotype_data.csv'
+    input_pheno_path = output_dir / 'data' / '00_filtered_phenotype_data.csv'
 
 # Determine output file
 if args.output_formulas_path:
     output_formulas_path = Path(args.output_formulas_path)
 else:
-    output_formulas_path = output_dir / 'data' / 'BLUEs_formulas.csv'
+    output_formulas_path = output_dir / 'data' / '01_BLUEs_formulas.csv'
+
+# Determine output phenotype file
+if args.output_pheno_path:
+    output_pheno_path = Path(args.output_pheno_path)
+else:
+    output_pheno_path = output_dir / 'data' / '01_BLUEs_formula_phenotype_data.csv'
 
 # Determine mapping file
 if args.mapping_json_path:
@@ -186,7 +192,8 @@ formulas_df = pd.DataFrame.from_dict(
 formulas_df.reset_index(inplace=True)
 formulas_df.rename(columns={'index': 'Environment'}, inplace=True)
 
-model_data.to_csv(args.output_pheno_path)
+output_pheno_path.parent.mkdir(parents=True, exist_ok=True)
+model_data.to_csv(output_pheno_path, index=False)
 
 # Ensure output directory exists
 output_formulas_path.parent.mkdir(parents=True, exist_ok=True)
