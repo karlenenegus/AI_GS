@@ -39,6 +39,8 @@ class EncodingConfig:
     kernel_type: str = "cosine"
     gamma: Optional[float] = None
     encoding_mode: str = "dosage"
+    encoding_window_size_in: int = 100
+    encoding_window_size_out: int = 90
     encoding_length: Optional[int] = None  # Filled later
 
     def update_encoding_length(self, length: int):
@@ -517,30 +519,40 @@ class Make_Encodings():
         elif self.encoding_mode == 'nystroem-KPCA':
             x = normalize(window, norm='l2', axis=1)
 
-            if not inference:          
-                if gamma is None:
-                    nystroem = Nystroem(kernel=kernel_type, n_components=nSubsample, random_state=42)
-                else:
-                    nystroem = Nystroem(kernel=kernel_type, n_components=nSubsample, random_state=42, gamma=gamma)
-                    
+            if not inference:
+                x_unique = np.unique(x, axis=0)
+                
                 # Don't use low variance features as landmark features
                 filter_variance = VarianceThreshold(threshold=1e-6)
                 
                 x_unique = np.unique(x, axis=0)
                 x_uq_filtered = filter_variance.fit_transform(x_unique)
+                
+                if x_uq_filtered.shape[0] < nSubsample:
+                    warn(f"--nSubsample {nSubsample} is too large. Using number of unique genotypes  - {x_uq_filtered.shape[0]} instead. Reduce size for efficient evaluation." )
+                      
+                if gamma is None:
+                    nystroem = Nystroem(kernel=kernel_type, n_components=nSubsample, random_state=42)
+                else:
+                    nystroem = Nystroem(kernel=kernel_type, n_components=nSubsample, random_state=42, gamma=gamma)
+                    
                 x_uq_transformed = nystroem.fit_transform(x_uq_filtered)
+                
+                x_filtered = filter_variance.transform(x)
+                x_transformed = nystroem.transform(x_filtered)
                 
                 if size_per_window:
                     n_components_pca = size_per_window
                 else:
                     n_components_pca = None
                 
-                # Fit final PCA with specified number of components
+                if n_components_pca >= x_filtered.shape[1]:
+                    Warning.warn(f"encoding_window_size_out of {n_components_pca} is too large. Will use number of snps after variance filtering {x_filtered.shape[1]} instead.")
+                    n_components_pca = None
+                
+                # Fit PCA with specified number of components                 
                 pca2 = PCA(n_components=n_components_pca)
                 pca2.fit(x_uq_transformed)
-                
-                x_filtered = filter_variance.transform(x)
-                x_transformed = nystroem.transform(x_filtered)
                 x_pca = pca2.transform(x_transformed)
             
                 # Create output directories
@@ -558,7 +570,7 @@ class Make_Encodings():
                 print(
                     f"Variance explained by encoding {st}-{ed}: "
                     f"PC's 1-4 {var_exp_1} | PC {n_components_pca} {var_exp_2} | "
-                    f"N components for 0.95: {n_components_pca}",
+                    f"Total variance: {total_variance}",
                     flush=True
                 )
                 
@@ -577,12 +589,12 @@ class Make_Encodings():
                 x_pca = pca2.transform(x_transformed)
             return x_pca
                 
-        elif self.encoding_mode == 'kmeans-cosine':
+        elif self.encoding_mode == 'landmark-cosine':
+            print('running landmark-cosine', flush=True)
             x = normalize(window, norm='l2', axis=1)
 
             if not inference:
-                x_unique = np.unique(x, axis=0)
-                landmarks = x_unique[landmark_idxs]
+                landmarks = x[landmark_idxs]
                 x_transformed = x @ landmarks.T
 
                 if not os.path.exists(f'{output_folder}/encoding_keys/landmarks/'):
@@ -600,9 +612,12 @@ class Make_Encodings():
                 
                 landmarks = joblib.load(landmarks_path)
                 x_transformed = x @ landmarks.T
-                
+            
             return x_transformed
-
+    
+        else:
+            raise ValueError("Encoding mode {self.encoding_mode} not recognized.")
+                
     def _apply_standardization(self, data: pd.Series, std_dict: dict):
         """Standardize nucleotide data using precomputed scaled dosage values."""
         snp_dict = std_dict.get(data.name)
@@ -701,17 +716,18 @@ class Make_Encodings():
         
         if self.encoding_mode == "dosage":
             encodings = np.full((n_individuals, len(window_names_dict), self.encoding_window_size_in*2), np.nan)
-        if self.encoding_mode == "nystroem-KPCA":
+        elif self.encoding_mode == "nystroem-KPCA":
             encodings = np.full((n_individuals, len(window_names_dict), self.encoding_window_size_in*2), np.nan)
-        if self.encoding_mode == "landmark-cosine":
+        elif self.encoding_mode == "landmark-cosine":
             landmark_idxs = np.random.choice(n_individuals, self.nSubsample, replace=False)
             encodings = np.full((n_individuals, len(window_names_dict), self.nSubsample), np.nan)
         else:
-            raise ValueError("Encoding method {self.encoding_mode} is not recognized. Use 'dosage', 'nystroem-KPCA', or 'landmark-cosine' instead.")
+            raise ValueError(f"Encoding method {self.encoding_mode} is not recognized. Use 'dosage', 'nystroem-KPCA', or 'landmark-cosine' instead.")
 
         window_sizes = []
         for i, (key, value) in enumerate(window_names_dict.items()):
             window = std_data.loc[value]
+            print(window.shape)
             window_output = self._encoding_within_window(
                 window.T, 
                 nSubsample=self.nSubsample, 
@@ -723,16 +739,10 @@ class Make_Encodings():
                 landmark_idxs=landmark_idxs
             )
             size = window_output.shape[1]
-            window_sizes[i] = size
+            window_sizes.append(size)
             encodings[:, i, :size] = window_output
             
-        if self.encoding_mode == "dosage":
-            n_individuals, n_windows, enc_size = encodings.shape
-            encodings = encodings.reshape(n_individuals, n_windows * enc_size)
-            total_size = sum(window_sizes)
-            encodings = encodings[:, :total_size]
-            
-        elif self.encoding_mode == "nystroem-KPCA":
+        if self.encoding_mode == "nystroem-KPCA":
             encodings = encodings[:, :, :min(window_sizes)]
             
         elif self.encoding_mode == "landmark-cosine":
@@ -740,13 +750,17 @@ class Make_Encodings():
             flat_encoding = encodings.reshape(n_individuals * n_windows, window_size)
             variance = np.var(flat_encoding, axis=0)
 
-            # Step 3: Select top-k landmarks by variance
             top_k = self.encoding_window_size_out
             landmark_idx = np.argsort(variance)[-top_k:]
 
-            # Step 4: Keep only top-k landmarks in original shape
             encodings = encodings[:, :, landmark_idx]
             
+        n_individuals, n_windows, encoding_depth = encodings.shape
+        encodings = encodings.reshape(n_individuals, n_windows * encoding_depth)
+        
+        if self.encoding_mode == "dosage":
+            total_size = sum(window_sizes)
+            encodings = encodings[:, :total_size]
         
         out_file_name = f"{self.output_dir}/Encodings_{file_prefix}_parquet/encodings.pkl"
         
@@ -761,7 +775,8 @@ class Make_Encodings():
         with open(config_path, "r") as file:
             config = yaml.safe_load(file) or {}
 
-        config["encoding_length"] = int(self.encoding_data.shape[1])
+        config["encoding_length"] = n_windows if self.encoding_mode != "dosage" else total_size
+        config['encoding_depth'] = encoding_depth if self.encoding_mode != "dosage" else 1
 
         with open(config_path, "w") as file:
             yaml.safe_dump(config, file, sort_keys=False)
