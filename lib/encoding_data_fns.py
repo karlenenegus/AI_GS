@@ -21,6 +21,7 @@ from sklearn.kernel_approximation import Nystroem
 from sklearn.preprocessing import normalize
 from sklearn.cluster import kmeans_plusplus
 
+from helper_fns import save_json, load_json
 # Note: LDWindowAnalyzer import should be added when available
 # from Dependencies.ld_analyzer import LDWindowAnalyzer
 
@@ -29,13 +30,6 @@ def make_dict(data, column):
     n_obj = obj.shape[0] + 1
     return dict(zip(obj, range(1, n_obj)))
 
-def save_json(data, path):
-    with open(path, 'w') as f:
-        json.dump(data, f)
-
-def load_json(path):
-    with open(path, 'r') as f:
-        return json.load(f)
 
 @dataclass
 class EncodingConfig:
@@ -218,20 +212,20 @@ class PhenotypeData:
         self.phenotypes_long = new_pheno
 
 
-class Make_Embeddings():
-    def __init__(self, input_file, hmp_metadata_column_names: Optional[List[str]] = None, encoding_config=None, shift=1, kernel_type='cosine', gamma=None, size_per_window = 3, nSubsample=100, encoding_mode='dosage',
-            output_dir="./Output_all/train_tmp", std_dict_file="standardization_dict.json"):        
+class Make_Encodings():
+    def __init__(self, input_file, hmp_metadata_column_names: Optional[List[str]] = None, encoding_config=None, shift=0, kernel_type=None, gamma=None, encoding_window_size_in = 10, encoding_window_size_out=None, nSubsample=0, encoding_mode='dosage', output_dir="./Output_all/train_tmp", std_dict_file="standardization_dict.json"):        
         
         self.encoding_config = encoding_config
         self.input_file = input_file
 
         if encoding_config is None:
-            self.shift = shift
-            self.encoding_window_size = size_per_window
             self.kernel_type = kernel_type
             self.gamma = gamma
             self.nSubsample = nSubsample
             self.encoding_mode = encoding_mode
+            self.shift = shift
+            self.encoding_window_size_in = encoding_window_size_in
+            self.encoding_window_size_out = encoding_window_size_out
         else:
             # encoding_config is a dataclass, access as attributes not dictionary
             self.kernel_type = encoding_config.kernel_type
@@ -239,7 +233,20 @@ class Make_Embeddings():
             self.nSubsample = encoding_config.nSubsample
             self.encoding_mode = encoding_config.encoding_mode
             self.shift = encoding_config.shift
-            self.encoding_window_size = encoding_config.encoding_window_size
+            self.encoding_window_size_in = encoding_config.encoding_window_size_in
+            self.encoding_window_size_out = encoding_config.encoding_window_size_out
+            
+        # if self.encoding_mode == "dosage":
+        #     #todo id required parameters send warning if none
+        #     ...
+        # elif self.encoding_mode == "landmark-cosine":
+        #     #todo id required parameters send warning if none
+        #     ...
+        # elif self.encoding_mode == "nystroem-KPCA":
+        #     #todo id required parameters send warning if none
+        #     ...
+        # else:
+        #     raise ValueError("Encoding method {self.encoding_mode} is not recognized. Use 'dosage', 'nystroem-KPCA', or 'landmark-cosine' instead.")
 
         self.output_dir = output_dir
         self.std_dict_file = std_dict_file
@@ -334,7 +341,7 @@ class Make_Embeddings():
             )
             
         if len(hom_indices) > 2:
-            warn(f"Warning: More than 2 homozygous genotypes found for SNP {input_column.name}. Only the first two will be used.")
+            warn(f"Warning: More than 2 homozygous genotypes found for SNdP {input_column.name}. Only the first two will be used.")
         
         irregular_indicies = [g for g in geno_counts.index if len(g) % 2 != 0]
         
@@ -456,10 +463,11 @@ class Make_Embeddings():
     def _encoding_within_window(
         self, 
         window: pd.DataFrame, 
-        nSubsample: int, 
-        size_per_window: int, 
+        nSubsample: int,
         inference: bool, 
         output_folder: str, 
+        landmark_idxs: Optional[np.array] = None,
+        size_per_window: Optional[int] = None, 
         kernel_type: Optional[str] = None, 
         gamma: Optional[float] = None
     ) -> np.ndarray:
@@ -469,14 +477,14 @@ class Make_Embeddings():
         Args:
             window: Subset of SNP data representing the window. Shape = [individuals, snp_window]
             nSubsample: Number of individuals for Nystroem approximation
-            size_per_window: Number of encodings per window
+            size_per_window: Number of encodings per window. If None for encoding_type = "nystroem-kpca" PCs = 95% variance explained will be fit.
             inference: If True, load saved transforms; if False, fit new transforms
             output_folder: Directory to save/load transforms
             kernel_type: Type of kernel ('cosine', 'rbf', etc.)
             gamma: Gamma parameter for radial basis function kernel (None for cosine)
         
         Returns:
-            Array of embeddings with shape [individuals, encoding_size_per_window]
+            Array of encodings with shape [individuals, encoding_size_per_window]
         """
         if not isinstance(window, pd.DataFrame):
             window = pd.DataFrame(window)
@@ -522,14 +530,13 @@ class Make_Embeddings():
                 x_uq_filtered = filter_variance.fit_transform(x_unique)
                 x_uq_transformed = nystroem.fit_transform(x_uq_filtered)
                 
-                # Fit PCA to determine variance explained
-                pca1 = PCA()
-                pca1.fit(x_uq_transformed)
-                cumulative_variance = np.cumsum(pca1.explained_variance_ratio_)
-                n_components_pca = np.searchsorted(cumulative_variance, 0.95) + 1
+                if size_per_window:
+                    n_components_pca = size_per_window
+                else:
+                    n_components_pca = None
                 
                 # Fit final PCA with specified number of components
-                pca2 = PCA(n_components=size_per_window)
+                pca2 = PCA(n_components=n_components_pca)
                 pca2.fit(x_uq_transformed)
                 
                 x_filtered = filter_variance.transform(x)
@@ -537,21 +544,20 @@ class Make_Embeddings():
                 x_pca = pca2.transform(x_transformed)
             
                 # Create output directories
-                for dir_name in ['nystroem', 'pca', 'filter_variance', 'selected_features']:
+                for dir_name in ['nystroem', 'pca', 'filter_variance']:
                     dir_path = f'{output_folder}/encoding_keys/{dir_name}/'
                     if not os.path.exists(dir_path):
                         os.makedirs(dir_path)
                 
                 # Calculate variance explained statistics
                 var_exp_1 = pca2.explained_variance_ratio_[:4]
-                var_exp_2 = pca2.explained_variance_ratio_[size_per_window - 1]
+                var_exp_2 = pca2.explained_variance_ratio_[-1]
                 cumulative_variance = np.cumsum(pca2.explained_variance_ratio_)
-                n_components_pca = np.searchsorted(cumulative_variance, 0.95) + 1
+                total_variance = cumulative_variance[-1]
     
                 print(
-                    f"Variance explained by embeddings {st}-{ed}: "
-                    f"PC's 1-4 {var_exp_1} | PC {size_per_window} {var_exp_2} | "
-                    f"Total: {cumulative_variance[size_per_window - 1]:.4f} | "
+                    f"Variance explained by encoding {st}-{ed}: "
+                    f"PC's 1-4 {var_exp_1} | PC {n_components_pca} {var_exp_2} | "
                     f"N components for 0.95: {n_components_pca}",
                     flush=True
                 )
@@ -576,11 +582,7 @@ class Make_Embeddings():
 
             if not inference:
                 x_unique = np.unique(x, axis=0)
-                n_landmarks = size_per_window
-                landmarks, _ = kmeans_plusplus(
-                    x_unique, n_clusters=n_landmarks, random_state=42
-                )
- 
+                landmarks = x_unique[landmark_idxs]
                 x_transformed = x @ landmarks.T
 
                 if not os.path.exists(f'{output_folder}/encoding_keys/landmarks/'):
@@ -670,11 +672,11 @@ class Make_Embeddings():
         
         std_data = pd.DataFrame(std_data)
         
-        step = self.encoding_window_size - self.shift
+        step = self.encoding_window_size_in - self.shift
         p = std_data.shape[0] # number of SNPs
         n_windows=int(np.ceil(p/(step)))
         
-        corrected_n_windows = sum(1 for i in range(n_windows) if step * i + self.encoding_window_size <= p)
+        corrected_n_windows = sum(1 for i in range(n_windows) if step * i + self.encoding_window_size_in <= p)
 
         if corrected_n_windows < 1:
             raise ValueError("Zero windows generated. Parameters: 'nSNPs', 'shift', and/or 'nMin' need to be adjusted smaller for this dataset.")
@@ -685,7 +687,7 @@ class Make_Embeddings():
 
         groups = [self._generate_window_groups(i, end, self.chromosome_breaks) for i, end in enumerate(self.chromosome_breaks) if i != 0]
         
-        window_range = [self._generate_window_indices(window_size=self.encoding_window_size, shift=self.shift, chromosome_start=start, chromosome_end=end) for start, end in groups]
+        window_range = [self._generate_window_indices(window_size=self.encoding_window_size_in, shift=self.shift, chromosome_start=start, chromosome_end=end) for start, end in groups]
         
         window_range_list = list(chain.from_iterable(window_range))
         
@@ -695,24 +697,56 @@ class Make_Embeddings():
         }
         save_json(window_names_dict, f"{self.output_dir}/encoding_keys/SNPsPerWindow.json")
         
+        landmark_idxs = None
+        
         if self.encoding_mode == "dosage":
-            encodings = np.zeros((n_individuals, len(full_std_dict.keys())))
-            
-            current_idx = 0
-            for i, (key, value) in enumerate(window_names_dict.items()):
-                window = std_data.loc[value]
-                window_output = self._encoding_within_window(window.T, nSubsample=self.nSubsample, size_per_window=self.encoding_window_size, kernel_type=self.kernel_type, gamma=self.gamma, inference=False, output_folder=self.output_dir)
-                size = window_output.shape[1]
-                encodings[:, current_idx:current_idx + size] = window_output
-                current_idx += size
-        
+            encodings = np.full((n_individuals, len(window_names_dict), self.encoding_window_size_in*2), np.nan)
+        if self.encoding_mode == "nystroem-KPCA":
+            encodings = np.full((n_individuals, len(window_names_dict), self.encoding_window_size_in*2), np.nan)
+        if self.encoding_mode == "landmark-cosine":
+            landmark_idxs = np.random.choice(n_individuals, self.nSubsample, replace=False)
+            encodings = np.full((n_individuals, len(window_names_dict), self.nSubsample), np.nan)
         else:
-            encodings = np.zeros((n_individuals, len(window_names_dict) * self.encoding_window_size))
-        
-            for i, (key, value) in enumerate(window_names_dict.items()):
-                window = std_data.loc[value]
-                window_output = self._encoding_within_window(window.T, nSubsample=self.nSubsample, size_per_window=self.encoding_window_size, kernel_type=self.kernel_type, gamma=self.gamma, inference=False, output_folder=self.output_dir)
-                encodings[:, i*self.encoding_window_size:(i*self.encoding_window_size)+self.encoding_window_size] = window_output
+            raise ValueError("Encoding method {self.encoding_mode} is not recognized. Use 'dosage', 'nystroem-KPCA', or 'landmark-cosine' instead.")
+
+        window_sizes = []
+        for i, (key, value) in enumerate(window_names_dict.items()):
+            window = std_data.loc[value]
+            window_output = self._encoding_within_window(
+                window.T, 
+                nSubsample=self.nSubsample, 
+                size_per_window=self.encoding_window_size_out, 
+                kernel_type=self.kernel_type, 
+                gamma=self.gamma, 
+                inference=False, 
+                output_folder=self.output_dir,
+                landmark_idxs=landmark_idxs
+            )
+            size = window_output.shape[1]
+            window_sizes[i] = size
+            encodings[:, i, :size] = window_output
+            
+        if self.encoding_mode == "dosage":
+            n_individuals, n_windows, enc_size = encodings.shape
+            encodings = encodings.reshape(n_individuals, n_windows * enc_size)
+            total_size = sum(window_sizes)
+            encodings = encodings[:, :total_size]
+            
+        elif self.encoding_mode == "nystroem-KPCA":
+            encodings = encodings[:, :, :min(window_sizes)]
+            
+        elif self.encoding_mode == "landmark-cosine":
+            n_individuals, n_windows, window_size = encodings.shape
+            flat_encoding = encodings.reshape(n_individuals * n_windows, window_size)
+            variance = np.var(flat_encoding, axis=0)
+
+            # Step 3: Select top-k landmarks by variance
+            top_k = self.encoding_window_size_out
+            landmark_idx = np.argsort(variance)[-top_k:]
+
+            # Step 4: Keep only top-k landmarks in original shape
+            encodings = encodings[:, :, landmark_idx]
+            
         
         out_file_name = f"{self.output_dir}/Encodings_{file_prefix}_parquet/encodings.pkl"
         
@@ -771,23 +805,31 @@ class Make_Embeddings():
         window_names_dict = load_json(f"{self.output_dir}/encoding_keys/SNPsPerWindow.json")
 
         if self.encoding_mode == "dosage":
-            encodings = np.zeros((n_individuals, len(std_dict.keys())))
+            total_size = len(std_dict.keys())
+        else:
+            total_size = len(window_names_dict) * self.encoding_window_size
+
+        encodings = np.zeros((n_individuals, total_size))
+
+        current_idx = 0
+        for i, (key, value) in enumerate(window_names_dict.items()):
+            window = std_data.loc[value]
+            window_output = self._encoding_within_window(
+                window.T, 
+                nSubsample=self.nSubsample, 
+                size_per_window=self.encoding_window_size, 
+                kernel_type=self.kernel_type, 
+                gamma=self.gamma, 
+                inference=True, 
+                output_folder=self.output_dir
+            )
             
-            current_idx = 0
-            for i, (key, value) in enumerate(window_names_dict.items()):
-                window = std_data.loc[value]
-                window_output = self._encoding_within_window(window.T, nSubsample=self.nSubsample, size_per_window=self.encoding_window_size, kernel_type=self.kernel_type, gamma=self.gamma, inference=True, output_folder=self.output_dir)
+            if self.encoding_mode == "dosage":
                 size = window_output.shape[1]
                 encodings[:, current_idx:current_idx + size] = window_output
                 current_idx += size
-        
-        else:
-            encodings = np.zeros((n_individuals, len(window_names_dict) * self.encoding_window_size))
-        
-            for i, (key, value) in enumerate(window_names_dict.items()):
-                window = std_data.loc[value]
-                window_output = self._encoding_within_window(window.T, nSubsample=self.nSubsample, size_per_window=self.encoding_window_size, kernel_type=self.kernel_type, gamma=self.gamma, inference=True, output_folder=self.output_dir)
-                encodings[:, i*self.encoding_window_size:(i*self.encoding_window_size)+self.encoding_window_size] = window_output
+            else:
+                encodings[:, i*self.encoding_window_size:(i+1)*self.encoding_window_size] = window_output
 
         if not os.path.exists(f"{self.output_dir}/Encodings_{file_prefix}_parquet"):
             os.makedirs(f"{self.output_dir}/Encodings_{file_prefix}_parquet")

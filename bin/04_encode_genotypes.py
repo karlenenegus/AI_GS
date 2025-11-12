@@ -3,7 +3,7 @@
 Encode genotypes for genomic prediction.
 
 Encodes genotype data from HapMap format into embeddings using various encoding methods
-(dosage, kmeans-cosine, nystroem-KPCA). Generates parquet files with phenotype and
+(dosage, landmark-cosine, nystroem-KPCA). Generates parquet files with phenotype and
 genotype encodings combined.
 
 Arguments:
@@ -25,11 +25,11 @@ Arguments:
         1..n assignments
     --use_config (flag, default=False): Use existing encoding configuration file.
         Encoding config is automatically saved from training
-    --encoding_window_size (int, default=10): Window size for local window kernel methods
-        and batch conversion of dosage SNPs
+    --encoding_window_size_in (int, default=10): Window size for batch conversion of SNPs to encodings
+    --encoding_window_size_out(int, optional, default=None): Output window size for encoding methods 'nystroem-kpca' and 'landmark-cosine' which include dimensionality reduction step
     --shift (int, default=0): How many SNPs each window overlaps. Default of 0 results
         in non-overlapping windows
-    --encoding_mode (str, optional): Encoding approach. Options: 'kmeans-cosine',
+    --encoding_mode (str, optional): Encoding approach. Options: 'landmark-cosine',
         'nystroem-KPCA', 'dosage'
     --nSubsample (int, optional): Used for local window kernel methods. Number of
         individuals to include when random sampling individuals to construct the Nystroem
@@ -55,7 +55,7 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 
-from lib.encoding_data_fns import Make_Embeddings, PhenotypeData, EncodingConfig
+from lib.encoding_data_fns import Make_Encodings, PhenotypeData, EncodingConfig
 
 # Parse command line arguments
 parser = argparse.ArgumentParser()
@@ -76,9 +76,10 @@ parser.add_argument("--envs_hold_out", action="store_true", default=False, help=
 parser.add_argument("-d", "--env_dict", default=None, help="Full path to the environment dictionary file. Required if using --env-hold-out flag. Column 1 contains unique environment col names and column 2 contains 1..n assignments")
 
 parser.add_argument("--use_config", action="store_true", default=False, help="Use existing encoding configuration file. Encoding config file is automatically saved from training.")
-parser.add_argument("--encoding_window_size", type=int, default=10, help="window size for local window kernel methods and batch conversion of dosage snps")
+parser.add_argument("--encoding_window_size_in", type=int, default=10, help="window size for batch conversion of snps to encodings")
+parser.add_argument("--encoding_window_size_out", type=int, default=None, help="window size for local window kernel methods that reduce dimensionality. If set to none, default subsampling will be used.")
 parser.add_argument("--shift", type=int, default=0, help="How many SNPs each window overlaps. Default of 0 results in non-overlapping windows")
-parser.add_argument("--encoding_mode", type=str, default=None, help="Encoding approach. Options: 'kmeans-cosine', 'nystroem-KPCA', 'dosage'")
+parser.add_argument("--encoding_mode", type=str, default=None, help="Encoding approach. Options: 'landmark-cosine', 'nystroem-KPCA', 'dosage'")
 
 # nystroem-KPCA args
 parser.add_argument("--nSubsample", type=int, default=None, help="Used for local window kernel methods. Number of individuals to include when random sampling individuals to construct the Nystroem kernel estimation.")
@@ -110,7 +111,8 @@ if args.use_config:
 else:
     if args.train_type == "Training":
         encoding_config = EncodingConfig(
-            encoding_window_size=args.encoding_window_size,
+            encoding_window_size_in = args.encoding_window_size_in,
+            encoding_window_size_out = args.encoding_window_size_out,
             shift=args.shift,
             nSubsample=args.nSubsample,
             kernel_type=args.kernel_type,
@@ -123,7 +125,7 @@ else:
         value_error_message = f"Encoding configuration file not found: {args.output_folder}/encoding_config.yaml. \n This file is required for validation and testing sets. Please run training first to create it."
         raise ValueError(value_error_message)
 
-mk_emb = Make_Embeddings(input_file=args.input_hmp_file, hmp_metadata_column_names=hmp_metadata_names, encoding_config=encoding_config, output_dir=args.output_folder)
+mk_emb = Make_Encodings(input_file=args.input_hmp_file, hmp_metadata_column_names=hmp_metadata_names, encoding_config=encoding_config, output_dir=args.output_folder)
 
 if args.train_type == "Training":
     mk_emb.training_mode(file_prefix=args.train_type, ind_names_to_keep=pheno_data[args.geno_col])
