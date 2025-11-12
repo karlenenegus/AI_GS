@@ -21,7 +21,7 @@ from sklearn.kernel_approximation import Nystroem
 from sklearn.preprocessing import normalize
 from sklearn.cluster import kmeans_plusplus
 
-from helper_fns import save_json, load_json
+from .helper_fns import save_json, load_json
 # Note: LDWindowAnalyzer import should be added when available
 # from Dependencies.ld_analyzer import LDWindowAnalyzer
 
