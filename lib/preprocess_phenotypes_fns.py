@@ -4,15 +4,9 @@ from sklearn.preprocessing import StandardScaler
 import os
 import json
 import warnings
+from helper_fns import save_json, load_json
 
-def save_json(data, path):
-    with open(path, 'w') as f:
-        json.dump(data, f)
 
-def load_json(path):
-    """Load a JSON file and return its contents."""
-    with open(path, 'r') as f:
-        return json.load(f)
 
 def filter_iqr_outliers(data, geno_col, env_col, pheno_col, iqr_multiplier=1.5):
     """
