@@ -42,10 +42,7 @@ class EncodingConfig:
     encoding_window_size_in: int = 100
     encoding_window_size_out: int = 90
     encoding_length: Optional[int] = None  # Filled later
-
-    def update_encoding_length(self, length: int):
-        """Update encoding_length after building encodings."""
-        self.encoding_length = int(length)
+    encoding_depth: Optional[int] = None #Filled later
 
     def _to_dict(self) -> Dict[str, Any]:
         """Convert the config into a plain dictionary."""
@@ -255,6 +252,10 @@ class Make_Encodings():
         self.snp_index = None
         self.chromosome_breaks = None
         self.encoding_data = None
+
+        if self.encoding_mode == "dosage":  
+            self.shift = 0
+            warn(f"Shift is set to 0 for dosage mode. This is because the dosage mode does not use overlapping windows.")
         
         if self.kernel_type == 'cosine':
             self.gamma = None
@@ -462,6 +463,67 @@ class Make_Encodings():
                 
         return ranges_list
 
+    def _select_orthogonal_landmarks(
+        self,
+        flat_encoding: np.ndarray,
+        variance: np.ndarray,
+        top_k: int,
+        correlation_threshold: float = 0.90
+    ) -> np.ndarray:
+        """
+        Select landmarks by variance, skipping highly correlated ones.
+        
+        Simple greedy approach:
+        1. Sort landmarks by variance (descending)
+        2. Iteratively add landmarks, skipping if max correlation with 
+           already selected exceeds threshold
+        
+        Args:
+            flat_encoding: Encodings array of shape [n_samples, n_landmarks]
+            variance: Variance for each landmark, shape [n_landmarks]
+            top_k: Number of landmarks to select
+            correlation_threshold: Maximum allowed correlation (0-1). (default 0.90)
+        
+        Returns:
+            Array of selected landmark indices, shape [top_k]
+        """
+        n_landmarks = variance.shape[0]
+        
+        if top_k >= n_landmarks:
+            return np.arange(n_landmarks)
+        
+        # Sort landmarks by variance (descending)
+        sorted_indices = np.argsort(variance)[::-1]
+        
+        # Normalize encodings for correlation computation
+        # Each column is a landmark's encoding across all samples
+        landmarks_normalized = normalize(flat_encoding, norm='l2', axis=0)  # [n_samples, n_landmarks]
+        
+        selected = []
+        for idx in sorted_indices:
+            if len(selected) >= top_k:
+                break
+            
+            # Check correlation with already selected landmarks
+            if len(selected) == 0:
+                # First landmark: always add (highest variance)
+                selected.append(idx)
+            else:
+                # Compute max absolute correlation with selected landmarks
+                correlations = np.abs(landmarks_normalized[:, idx] @ landmarks_normalized[:, selected])
+                max_correlation = np.max(correlations)
+                
+                # Add if correlation is below threshold
+                if max_correlation < correlation_threshold:
+                    selected.append(idx)
+        
+        # If we didn't get enough landmarks, fill with remaining highest variance
+        if len(selected) < top_k:
+            remaining = [idx for idx in sorted_indices if idx not in selected]
+            selected.extend(remaining[:top_k - len(selected)])
+        
+        return np.array(selected[:top_k])
+    
     def _encoding_within_window(
         self, 
         window: pd.DataFrame, 
@@ -514,7 +576,25 @@ class Make_Encodings():
                 
                 selected_features = joblib.load(selected_features_path)
                 X_selected = x[selected_features]
-            return X_selected
+            
+            X_selected_array = X_selected.values.astype(np.float32)  # [individuals, snps]
+            
+            allele_A = np.zeros_like(X_selected, dtype=np.float32)
+            allele_B = np.zeros_like(X_selected, dtype=np.float32)
+            
+            allele_A[X_selected == 0] = 2
+            allele_A[X_selected == 1] = 1
+            
+            allele_B[X_selected == 2] = 2
+            allele_B[X_selected == 1] = 1
+
+            #interaction_feature = allele_A * allele_B
+            
+            # Stack into [individuals, snps, 2] shape
+            #X_selected_3d = np.stack([allele_A, allele_B, interaction_feature], axis=-1)
+            X_selected_3d = np.stack([allele_A, allele_B], axis=-1)  # [individuals, snps, 2]
+            
+            return X_selected_3d
 
         elif self.encoding_mode == 'nystroem-KPCA':
             x = normalize(window, norm='l2', axis=1)
@@ -590,18 +670,13 @@ class Make_Encodings():
             return x_pca
                 
         elif self.encoding_mode == 'landmark-cosine':
-            print('running landmark-cosine', flush=True)
             x = normalize(window, norm='l2', axis=1)
 
             if not inference:
-                landmarks = x[landmark_idxs]
+                landmarks = x[landmark_idxs] # [n_landmarks, n_snps]
                 x_transformed = x @ landmarks.T
 
-                if not os.path.exists(f'{output_folder}/encoding_keys/landmarks/'):
-                    os.makedirs(f'{output_folder}/encoding_keys/landmarks/')
-                
                 joblib.dump(landmarks, f'{output_folder}/encoding_keys/landmarks/landmarks_window{st}-{ed}.pkl')
-
             else:
                 landmarks_path = f'{output_folder}/encoding_keys/landmarks/landmarks_window{st}-{ed}.pkl'
                 if not os.path.exists(landmarks_path):
@@ -609,9 +684,13 @@ class Make_Encodings():
                         f"'{landmarks_path}' does not exist! "
                         "Your inference data does not match the training data."
                     )
-                
+
                 landmarks = joblib.load(landmarks_path)
-                x_transformed = x @ landmarks.T
+                final_landmarks_path = f'{output_folder}/encoding_keys/landmarks/selected_landmark_idxs.pkl'
+                
+                final_landmark_idxs = joblib.load(final_landmarks_path)
+                final_landmarks = landmarks[final_landmark_idxs]  # [n_landmarks, n_snps]
+                x_transformed = x @ final_landmarks.T  # [n_individuals, n_landmarks]
             
             return x_transformed
     
@@ -673,20 +752,10 @@ class Make_Encodings():
         
         full_std_dict = {k: v for d in std_dicts for k, v in d.items()}
         save_json(full_std_dict, f'{self.output_dir}/encoding_keys/{self.std_dict_file}')
-        
-        # TODO: Uncomment when LDWindowAnalyzer is available
-        # analyzer = LDWindowAnalyzer(
-        #     hmp_file=self.input_file,
-        #     std_dict_path=f'{self.output_dir}/{self.std_dict_file}',
-        #     ind_names=pheno_data_names,
-        #     window_size=100000,
-        #     step_size=50000
-        # )
-        # _ = analyzer.compute_ld_windows()
-        # analyzer.save_assignments(f'{self.output_dir}/ld_window_assignments.npy')
+
         
         std_data = pd.DataFrame(std_data)
-        
+            
         step = self.encoding_window_size_in - self.shift
         p = std_data.shape[0] # number of SNPs
         n_windows=int(np.ceil(p/(step)))
@@ -715,7 +784,8 @@ class Make_Encodings():
         landmark_idxs = None
         
         if self.encoding_mode == "dosage":
-            encodings = np.full((n_individuals, len(window_names_dict), self.encoding_window_size_in*2), np.nan)
+            total_snps = std_data.shape[0]
+            encodings = np.full((n_individuals, total_snps, 2), np.nan)
         elif self.encoding_mode == "nystroem-KPCA":
             encodings = np.full((n_individuals, len(window_names_dict), self.encoding_window_size_in*2), np.nan)
         elif self.encoding_mode == "landmark-cosine":
@@ -727,7 +797,7 @@ class Make_Encodings():
         window_sizes = []
         for i, (key, value) in enumerate(window_names_dict.items()):
             window = std_data.loc[value]
-            print(window.shape)
+
             window_output = self._encoding_within_window(
                 window.T, 
                 nSubsample=self.nSubsample, 
@@ -738,12 +808,17 @@ class Make_Encodings():
                 output_folder=self.output_dir,
                 landmark_idxs=landmark_idxs
             )
-            size = window_output.shape[1]
+            size = window_output.shape[1] 
+            
+            if self.encoding_mode == "dosage":
+                encodings[:, sum(window_sizes):sum(window_sizes)+size, :] = window_output # [n_individuals, total_snps, 2]
+            else:
+                encodings[:, i, :size] = window_output # [n_individuals, n_windows, snps_per_window]
+            
             window_sizes.append(size)
-            encodings[:, i, :size] = window_output
             
         if self.encoding_mode == "nystroem-KPCA":
-            encodings = encodings[:, :, :min(window_sizes)]
+            encodings = encodings[:, :, :min(window_sizes)] # [n_individuals, n_windows, min(snps_per_window)]  
             
         elif self.encoding_mode == "landmark-cosine":
             n_individuals, n_windows, window_size = encodings.shape
@@ -751,16 +826,21 @@ class Make_Encodings():
             variance = np.var(flat_encoding, axis=0)
 
             top_k = self.encoding_window_size_out
-            landmark_idx = np.argsort(variance)[-top_k:]
-
-            encodings = encodings[:, :, landmark_idx]
+            # Select landmarks by variance, avoiding highly correlated ones
+            new_landmark_idxs = self._select_orthogonal_landmarks(
+                flat_encoding, variance, top_k, correlation_threshold=0.95
+            )
+            output_landmark_idxs = landmark_idxs[new_landmark_idxs]
             
-        n_individuals, n_windows, encoding_depth = encodings.shape
-        encodings = encodings.reshape(n_individuals, n_windows * encoding_depth)
+            if not os.path.exists(f'{self.output_dir}/encoding_keys/landmarks/'):
+                    os.makedirs(f'{self.output_dir}/encoding_keys/landmarks/')
+                    
+            joblib.dump(output_landmark_idxs, f'{self.output_dir}/encoding_keys/landmarks/selected_landmark_idxs.pkl')
+
+            encodings = encodings[:, :, new_landmark_idxs] # [n_individuals, n_windows, encoding_window_size_out]
         
-        if self.encoding_mode == "dosage":
-            total_size = sum(window_sizes)
-            encodings = encodings[:, :total_size]
+        n_individuals, encoding_length, encoding_depth = encodings.shape
+        encodings = encodings.reshape(n_individuals, encoding_length * encoding_depth)
         
         out_file_name = f"{self.output_dir}/Encodings_{file_prefix}_parquet/encodings.pkl"
         
@@ -775,8 +855,8 @@ class Make_Encodings():
         with open(config_path, "r") as file:
             config = yaml.safe_load(file) or {}
 
-        config["encoding_length"] = n_windows if self.encoding_mode != "dosage" else total_size
-        config['encoding_depth'] = encoding_depth if self.encoding_mode != "dosage" else 1
+        config["encoding_length"] = encoding_length
+        config['encoding_depth'] = encoding_depth
 
         with open(config_path, "w") as file:
             yaml.safe_dump(config, file, sort_keys=False)
@@ -803,48 +883,61 @@ class Make_Encodings():
         
         std_data = pd.DataFrame(std_data)
 
-        step = self.nSNPs - self.shift
+        step = self.encoding_window_size_in - self.shift
         p = std_data.shape[0]  # number of SNPs
         n_windows = int(np.ceil(p / step))
         
-        corrected_n_windows = sum(1 for i in range(n_windows) if step * i + self.nSNPs <= p)
+        corrected_n_windows = sum(1 for i in range(n_windows) if step * i + self.encoding_window_size_in <= p)
 
         if corrected_n_windows < 1:
-            raise ValueError("Zero L-RBF Chunks generated. Parameters: 'nSNPs', 'shift', and/or 'nMin' need to be adjusted smaller for this dataset.")
+            raise ValueError("Zero windows generated. Parameters: 'nSNPs', 'shift', and/or 'nMin' need to be adjusted smaller for this dataset.")
         elif 1 < corrected_n_windows < 100:
-            warn(f"Only {corrected_n_windows} chunks were generated with the specified parameters. Check that 'nSNPs' and/or 'shift', are appropriate.")
+            warn(f"Only {corrected_n_windows} windows were generated with the specified parameters. Check that 'nSNPs' and/or 'shift', are appropriate.")
 
         n_individuals = std_data.shape[1]
         
         #Parallelize this in the future
         window_names_dict = load_json(f"{self.output_dir}/encoding_keys/SNPsPerWindow.json")
-
+        
+        landmark_idxs = None
+        
         if self.encoding_mode == "dosage":
-            total_size = len(std_dict.keys())
+            total_snps = std_data.shape[0]
+            encodings = np.full((n_individuals, total_snps, 2), np.nan)
+        elif self.encoding_mode == "nystroem-KPCA":
+            encodings = np.full((n_individuals, len(window_names_dict), self.encoding_window_size_in*2), np.nan)
+        elif self.encoding_mode == "landmark-cosine":
+            # Use encoding_window_size_out since selected landmarks are applied per window during inference
+            encodings = np.full((n_individuals, len(window_names_dict), self.encoding_window_size_out), np.nan)
         else:
-            total_size = len(window_names_dict) * self.encoding_window_size
+            raise ValueError(f"Encoding method {self.encoding_mode} is not recognized. Use 'dosage', 'nystroem-KPCA', or 'landmark-cosine' instead.")
 
-        encodings = np.zeros((n_individuals, total_size))
-
-        current_idx = 0
+        window_sizes = []
         for i, (key, value) in enumerate(window_names_dict.items()):
             window = std_data.loc[value]
             window_output = self._encoding_within_window(
                 window.T, 
                 nSubsample=self.nSubsample, 
-                size_per_window=self.encoding_window_size, 
+                size_per_window=self.encoding_window_size_out, 
                 kernel_type=self.kernel_type, 
                 gamma=self.gamma, 
                 inference=True, 
                 output_folder=self.output_dir
             )
+            size = window_output.shape[1] 
             
             if self.encoding_mode == "dosage":
-                size = window_output.shape[1]
-                encodings[:, current_idx:current_idx + size] = window_output
-                current_idx += size
+                encodings[:, sum(window_sizes):sum(window_sizes)+size, :] = window_output # [n_individuals, total_snps, 2]
             else:
-                encodings[:, i*self.encoding_window_size:(i+1)*self.encoding_window_size] = window_output
+                encodings[:, i, :size] = window_output # [n_individuals, n_windows, snps_per_window]
+            
+            window_sizes.append(size)
+            
+        if self.encoding_mode == "nystroem-KPCA":
+            encodings = encodings[:, :, :min(window_sizes)] # [n_individuals, n_windows, min(snps_per_window)]  
+            
+        n_individuals, encoding_length, encoding_depth = encodings.shape
+        encodings = encodings.reshape(n_individuals, encoding_length * encoding_depth)
 
         if not os.path.exists(f"{self.output_dir}/Encodings_{file_prefix}_parquet"):
             os.makedirs(f"{self.output_dir}/Encodings_{file_prefix}_parquet")
@@ -852,6 +945,8 @@ class Make_Encodings():
         out_file_name = f"{self.output_dir}/Encodings_{file_prefix}_parquet/encodings.pkl"
         joblib.dump(encodings, out_file_name)
         self.encoding_data = encodings
+        pd.DataFrame(encodings).to_csv(f'{self.output_dir}/encoding_example.csv')
+        
         print(f'Encoding data saved to {out_file_name}', flush=True)
 
     def _data_chunker(self, data: pd.DataFrame, batch_size: int):
@@ -904,7 +999,7 @@ class Make_Encodings():
                     raise ValueError("Could not find environment column in phenotype_data. Check if the environment column name is correct in the pheno_column_mapping.json file.")
             
             # Reset index to save individual ID as a column
-            # Map to final output names: name, labels, trait_input_ids, env_input_ids
+            # Map to final output names: name, labels, trait_input, env_inputs
             rename_dict = {}
             
             # Genotype column
@@ -923,20 +1018,20 @@ class Make_Encodings():
                 
             # Trait name column
             if 'trait_name' in batch_masked.columns:
-                rename_dict['trait_name'] = 'trait_input_ids'
+                rename_dict['trait_name'] = 'trait_input'
             elif 'variable' in batch_masked.columns:
-                rename_dict['variable'] = 'trait_input_ids'
+                rename_dict['variable'] = 'trait_input'
             elif 'phenotype_name' in batch_masked.columns:
-                rename_dict['phenotype_name'] = 'trait_input_ids'
+                rename_dict['phenotype_name'] = 'trait_input'
             
-            # Environment column (always rename to env_input_ids)
+            # Environment column (always rename to env_inputs)
             if env_col != 'env':
-                rename_dict[env_col] = 'env_input_ids'
+                rename_dict[env_col] = 'env_inputs'
             else:
-                rename_dict['env'] = 'env_input_ids'
+                rename_dict['env'] = 'env_inputs'
             
             batch_masked = batch_masked.reset_index(drop=True).rename(columns=rename_dict)
-            columns = ['encodings', 'name', 'labels', 'trait_input_ids', 'env_input_ids']
+            columns = ['encodings', 'name', 'labels', 'trait_input', 'env_inputs']
             # Only keep columns that exist
             columns = [col for col in columns if col in batch_masked.columns]
             batch_masked = batch_masked[columns]
