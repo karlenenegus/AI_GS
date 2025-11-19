@@ -80,7 +80,7 @@ parser.add_argument("--encoding_window_size_in", type=int, default=10, help="win
 parser.add_argument("--encoding_window_size_out", type=int, default=None, help="window size for local window kernel methods that reduce dimensionality. If set to none, default subsampling will be used.")
 parser.add_argument("--shift", type=int, default=0, help="How many SNPs each window overlaps. Default of 0 results in non-overlapping windows")
 parser.add_argument("--encoding_mode", type=str, default=None, help="Encoding approach. Options: 'landmark-cosine', 'nystroem-KPCA', 'dosage'")
-
+parser.add_argument("--uniform_size_per_window", action="store_true", default=False, help="For use with 'dosage' encoding mode. If True, the size of the encoding window will be uniform for all windows. If False, the size of the encoding window will be variable based on the number of SNPs in the window.")
 # nystroem-KPCA args
 parser.add_argument("--nSubsample", type=int, default=None, help="Used for local window kernel methods. Number of individuals to include when random sampling individuals to construct the Nystroem kernel estimation.")
 parser.add_argument("--kernel_type", type=str, default=None, help="Kernel type used for nystroem-KPCA encoding methods. See sklearn.kernel_approximation.Nystroem for more information. Options: 'rbf', 'cosine', 'sigmoid', 'polynomial")
@@ -118,6 +118,7 @@ else:
             kernel_type=args.kernel_type,
             gamma=args.gamma,
             encoding_mode=args.encoding_mode,
+            uniform_size_per_window=args.uniform_size_per_window,
             encoding_length=None # will be filled in later with the actual encoding size
         )
         encoding_config.save(f"{args.output_folder}/encoding_config.yaml")

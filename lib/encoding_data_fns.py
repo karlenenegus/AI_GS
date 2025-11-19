@@ -41,6 +41,7 @@ class EncodingConfig:
     encoding_mode: str = "dosage"
     encoding_window_size_in: int = 100
     encoding_window_size_out: int = 90
+    uniform_size_per_window: bool = False
     encoding_length: Optional[int] = None  # Filled later
     encoding_depth: Optional[int] = None #Filled later
 
@@ -212,7 +213,7 @@ class PhenotypeData:
 
 
 class Make_Encodings():
-    def __init__(self, input_file, hmp_metadata_column_names: Optional[List[str]] = None, encoding_config=None, shift=0, kernel_type=None, gamma=None, encoding_window_size_in = 10, encoding_window_size_out=None, nSubsample=0, encoding_mode='dosage', output_dir="./Output_all/train_tmp", std_dict_file="standardization_dict.json"):        
+    def __init__(self, input_file, hmp_metadata_column_names: Optional[List[str]] = None, encoding_config=None, shift=0, kernel_type=None, gamma=None, encoding_window_size_in = 10, encoding_window_size_out=None, uniform_size_per_window=False, nSubsample=0, encoding_mode='dosage', output_dir="./Output_all/train_tmp", std_dict_file="standardization_dict.json"):        
         
         self.encoding_config = encoding_config
         self.input_file = input_file
@@ -225,6 +226,7 @@ class Make_Encodings():
             self.shift = shift
             self.encoding_window_size_in = encoding_window_size_in
             self.encoding_window_size_out = encoding_window_size_out
+            self.uniform_size_per_window = uniform_size_per_window
         else:
             # encoding_config is a dataclass, access as attributes not dictionary
             self.kernel_type = encoding_config.kernel_type
@@ -234,6 +236,7 @@ class Make_Encodings():
             self.shift = encoding_config.shift
             self.encoding_window_size_in = encoding_config.encoding_window_size_in
             self.encoding_window_size_out = encoding_config.encoding_window_size_out
+            self.uniform_size_per_window = encoding_config.uniform_size_per_window
             
         # if self.encoding_mode == "dosage":
         #     #todo id required parameters send warning if none
@@ -560,7 +563,22 @@ class Make_Encodings():
             x = window
             if not inference: 
                 selected_features = x.columns.tolist()
+
                 X_selected = x[selected_features]
+                
+                if self.uniform_size_per_window:
+                    X_selected_variance = X_selected.var(skipna=True)
+                    top_k = np.argsort(X_selected_variance)[::-1][:size_per_window]
+                    # Select columns by position using iloc
+                    x_filtered = X_selected.iloc[:, top_k]
+
+                    if not os.path.exists(f'{output_folder}/encoding_keys/top_k_indices/'):
+                        os.makedirs(f'{output_folder}/encoding_keys/top_k_indices/')
+                    
+                    # Save top_k indices for inference
+                    joblib.dump(top_k, f'{output_folder}/encoding_keys/top_k_indices/top_k_indices_window{st}-{ed}.pkl')
+                else:
+                    x_filtered = X_selected
                 
                 if not os.path.exists(f'{output_folder}/encoding_keys/selected_features/'):
                     os.makedirs(f'{output_folder}/encoding_keys/selected_features/')
@@ -576,32 +594,43 @@ class Make_Encodings():
                 
                 selected_features = joblib.load(selected_features_path)
                 X_selected = x[selected_features]
+
+                if self.uniform_size_per_window:
+                    top_k_path = f'{output_folder}/encoding_keys/top_k_indices/top_k_indices_window{st}-{ed}.pkl'
+                    if not os.path.exists(top_k_path):
+                        raise FileNotFoundError(
+                            f"'{top_k_path}' does not exist! "
+                            "Your inference data does not match the training data."
+                        )
+                    top_k = joblib.load(top_k_path)
+
+                    x_filtered = X_selected.iloc[:, top_k]
+                else:
+                    x_filtered = X_selected
             
-            X_selected_array = X_selected.values.astype(np.float32)  # [individuals, snps]
+            #x_filtered_array = x_filtered.values.astype(np.float32)  # [individuals, snps]
             
-            allele_A = np.zeros_like(X_selected, dtype=np.float32)
-            allele_B = np.zeros_like(X_selected, dtype=np.float32)
+            allele_A = np.zeros_like(x_filtered, dtype=np.float32)
+            allele_B = np.zeros_like(x_filtered, dtype=np.float32)
             
-            allele_A[X_selected == 0] = 2
-            allele_A[X_selected == 1] = 1
+            allele_A[x_filtered == 0] = 2
+            allele_A[x_filtered == 1] = 1
             
-            allele_B[X_selected == 2] = 2
-            allele_B[X_selected == 1] = 1
+            allele_B[x_filtered == 2] = 2
+            allele_B[x_filtered == 1] = 1
 
             #interaction_feature = allele_A * allele_B
             
             # Stack into [individuals, snps, 2] shape
-            #X_selected_3d = np.stack([allele_A, allele_B, interaction_feature], axis=-1)
-            X_selected_3d = np.stack([allele_A, allele_B], axis=-1)  # [individuals, snps, 2]
+            #x_filtered_3d = np.stack([allele_A, allele_B, interaction_feature], axis=-1)
+            x_filtered_3d = np.stack([allele_A, allele_B], axis=-1)  # [individuals, snps, 2]
             
-            return X_selected_3d
+            return x_filtered_3d
 
         elif self.encoding_mode == 'nystroem-KPCA':
             x = normalize(window, norm='l2', axis=1)
 
             if not inference:
-                x_unique = np.unique(x, axis=0)
-                
                 # Don't use low variance features as landmark features
                 filter_variance = VarianceThreshold(threshold=1e-6)
                 
@@ -610,30 +639,33 @@ class Make_Encodings():
                 
                 if x_uq_filtered.shape[0] < nSubsample:
                     warn(f"--nSubsample {nSubsample} is too large. Using number of unique genotypes  - {x_uq_filtered.shape[0]} instead. Reduce size for efficient evaluation." )
-                      
-                if gamma is None:
-                    nystroem = Nystroem(kernel=kernel_type, n_components=nSubsample, random_state=42)
+                    new_nSubsample = int(x_uq_filtered.shape[0])
                 else:
-                    nystroem = Nystroem(kernel=kernel_type, n_components=nSubsample, random_state=42, gamma=gamma)
+                    new_nSubsample = nSubsample
+
+                if gamma is None:
+                    nystroem = Nystroem(kernel=kernel_type, n_components=new_nSubsample, random_state=42)
+                else:
+                    nystroem = Nystroem(kernel=kernel_type, n_components=new_nSubsample, random_state=42, gamma=gamma)
                     
                 x_uq_transformed = nystroem.fit_transform(x_uq_filtered)
                 
                 x_filtered = filter_variance.transform(x)
                 x_transformed = nystroem.transform(x_filtered)
                 
-                if size_per_window:
-                    n_components_pca = size_per_window
-                else:
-                    n_components_pca = None
+                # if size_per_window:
+                #     n_components_pca = size_per_window
+                # else:
+                #     n_components_pca = None
                 
-                if n_components_pca >= x_filtered.shape[1]:
-                    Warning.warn(f"encoding_window_size_out of {n_components_pca} is too large. Will use number of snps after variance filtering {x_filtered.shape[1]} instead.")
-                    n_components_pca = None
+                # if n_components_pca > x_filtered.shape[1]:
+                #     warn(f"encoding_window_size_out of {n_components_pca} is too large. Will use number of snps after variance filtering {x_filtered.shape[1]} instead.")
+                #     n_components_pca = None
                 
-                # Fit PCA with specified number of components                 
-                pca2 = PCA(n_components=n_components_pca)
-                pca2.fit(x_uq_transformed)
-                x_pca = pca2.transform(x_transformed)
+                # # Fit PCA with specified number of components                 
+                # pca2 = PCA(n_components=n_components_pca)
+                # pca2.fit(x_uq_transformed)
+                # x_pca = pca2.transform(x_transformed)
             
                 # Create output directories
                 for dir_name in ['nystroem', 'pca', 'filter_variance']:
@@ -641,33 +673,35 @@ class Make_Encodings():
                     if not os.path.exists(dir_path):
                         os.makedirs(dir_path)
                 
-                # Calculate variance explained statistics
-                var_exp_1 = pca2.explained_variance_ratio_[:4]
-                var_exp_2 = pca2.explained_variance_ratio_[-1]
-                cumulative_variance = np.cumsum(pca2.explained_variance_ratio_)
-                total_variance = cumulative_variance[-1]
+                # # Calculate variance explained statistics
+                # var_exp_1 = pca2.explained_variance_ratio_[:4]
+                # var_exp_2 = pca2.explained_variance_ratio_[-1]
+                # cumulative_variance = np.cumsum(pca2.explained_variance_ratio_)
+                # total_variance = cumulative_variance[-1]
     
-                print(
-                    f"Variance explained by encoding {st}-{ed}: "
-                    f"PC's 1-4 {var_exp_1} | PC {n_components_pca} {var_exp_2} | "
-                    f"Total variance: {total_variance}",
-                    flush=True
-                )
+                # print(
+                #     f"shape of x_transformed: {x_transformed.shape}",
+                #     f"shape of x_pca: {x_pca.shape}",
+                #     f"Variance explained by encoding {st}-{ed}: "
+                #     f"PC's 1-4 {var_exp_1} | PC {n_components_pca} {var_exp_2} | "
+                #     f"Total variance: {total_variance}",
+                #     flush=True
+                # )
                 
                 # Save transforms
                 joblib.dump(nystroem, f'{output_folder}/encoding_keys/nystroem/nystroem_window{st}-{ed}.pkl')
-                joblib.dump(pca2, f'{output_folder}/encoding_keys/pca/pca_window{st}-{ed}.pkl')
+                #joblib.dump(pca2, f'{output_folder}/encoding_keys/pca/pca_window{st}-{ed}.pkl')
                 joblib.dump(filter_variance, f'{output_folder}/encoding_keys/filter_variance/filter_variance_window{st}-{ed}.pkl')
 
             else:
                 nystroem = joblib.load(f'{output_folder}/encoding_keys/nystroem/nystroem_window{st}-{ed}.pkl')
-                pca2 = joblib.load(f'{output_folder}/encoding_keys/pca/pca_window{st}-{ed}.pkl')
+                #pca2 = joblib.load(f'{output_folder}/encoding_keys/pca/pca_window{st}-{ed}.pkl')
                 filter_variance = joblib.load(f'{output_folder}/encoding_keys/filter_variance/filter_variance_window{st}-{ed}.pkl')
                 
                 x_filtered = filter_variance.transform(x)
                 x_transformed = nystroem.transform(x_filtered)
-                x_pca = pca2.transform(x_transformed)
-            return x_pca
+                #x_pca = pca2.transform(x_transformed)
+            return x_transformed
                 
         elif self.encoding_mode == 'landmark-cosine':
             x = normalize(window, norm='l2', axis=1)
@@ -675,6 +709,8 @@ class Make_Encodings():
             if not inference:
                 landmarks = x[landmark_idxs] # [n_landmarks, n_snps]
                 x_transformed = x @ landmarks.T
+
+                os.makedirs(f'{output_folder}/encoding_keys/landmarks/', exist_ok=True)
 
                 joblib.dump(landmarks, f'{output_folder}/encoding_keys/landmarks/landmarks_window{st}-{ed}.pkl')
             else:
@@ -787,7 +823,7 @@ class Make_Encodings():
             total_snps = std_data.shape[0]
             encodings = np.full((n_individuals, total_snps, 2), np.nan)
         elif self.encoding_mode == "nystroem-KPCA":
-            encodings = np.full((n_individuals, len(window_names_dict), self.encoding_window_size_in*2), np.nan)
+            encodings = np.full((n_individuals, len(window_names_dict), self.nSubsample), np.nan)
         elif self.encoding_mode == "landmark-cosine":
             landmark_idxs = np.random.choice(n_individuals, self.nSubsample, replace=False)
             encodings = np.full((n_individuals, len(window_names_dict), self.nSubsample), np.nan)
@@ -821,21 +857,17 @@ class Make_Encodings():
             encodings = encodings[:, :, :min(window_sizes)] # [n_individuals, n_windows, min(snps_per_window)]  
             
         elif self.encoding_mode == "landmark-cosine":
-            n_individuals, n_windows, window_size = encodings.shape
+            n_individuals, n_windows, window_size = encodings.shape #window_size = subset size
             flat_encoding = encodings.reshape(n_individuals * n_windows, window_size)
-            variance = np.var(flat_encoding, axis=0)
-
-            top_k = self.encoding_window_size_out
-            # Select landmarks by variance, avoiding highly correlated ones
-            new_landmark_idxs = self._select_orthogonal_landmarks(
-                flat_encoding, variance, top_k, correlation_threshold=0.95
-            )
-            output_landmark_idxs = landmark_idxs[new_landmark_idxs]
             
-            if not os.path.exists(f'{self.output_dir}/encoding_keys/landmarks/'):
-                    os.makedirs(f'{self.output_dir}/encoding_keys/landmarks/')
-                    
-            joblib.dump(output_landmark_idxs, f'{self.output_dir}/encoding_keys/landmarks/selected_landmark_idxs.pkl')
+            # Select landmarks using kmeans++ initialization for well-spread diversity
+            # Transpose to treat landmarks as samples: (n_landmarks, n_samples)
+            _, new_landmark_idxs = kmeans_plusplus(
+                flat_encoding.T, n_clusters=self.encoding_window_size_out, random_state=None
+            )
+            
+            os.makedirs(f'{self.output_dir}/encoding_keys/landmarks/', exist_ok=True)
+            joblib.dump(new_landmark_idxs, f'{self.output_dir}/encoding_keys/landmarks/selected_landmark_idxs.pkl')
 
             encodings = encodings[:, :, new_landmark_idxs] # [n_individuals, n_windows, encoding_window_size_out]
         
@@ -905,7 +937,7 @@ class Make_Encodings():
             total_snps = std_data.shape[0]
             encodings = np.full((n_individuals, total_snps, 2), np.nan)
         elif self.encoding_mode == "nystroem-KPCA":
-            encodings = np.full((n_individuals, len(window_names_dict), self.encoding_window_size_in*2), np.nan)
+            encodings = np.full((n_individuals, len(window_names_dict), self.nSubsample), np.nan)
         elif self.encoding_mode == "landmark-cosine":
             # Use encoding_window_size_out since selected landmarks are applied per window during inference
             encodings = np.full((n_individuals, len(window_names_dict), self.encoding_window_size_out), np.nan)
