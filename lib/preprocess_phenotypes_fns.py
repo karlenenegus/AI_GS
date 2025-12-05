@@ -127,7 +127,7 @@ def convert2output(data, genotype_col, environ_col, phenotype_col, phenotype_nam
     return data
 
 
-def scale_phenotype(data, env, mode, location, pheno_col):
+def scale_phenotype(data, env, mode, output_dir, pheno_col):
     """
     Scale the phenotype column for a single environment using StandardScaler.
 
@@ -138,33 +138,31 @@ def scale_phenotype(data, env, mode, location, pheno_col):
                    - 'train': Fit scaler and transform data, save scaler to disk.
                    - 'inference': Load scaler and transform data.
                    - 'inverse': Load scaler and inverse transform data to original scale.
-        location (str): Directory to save/load the scaler.
+        output_dir (str): Directory to save/load the scaler.
         pheno_col (str): Column name for phenotype values.
 
     Returns:
         pd.DataFrame: DataFrame with phenotype column scaled according to mode.
     """
-    os.makedirs(f'{location}/data/pheno_scalers/', exist_ok=True)
-    scaler_path = f"{location}/data/pheno_scalers/pheno_scaler_env_{env}.pkl"
+    os.makedirs(f'{output_dir}/data/pheno_scalers/', exist_ok=True)
+    scaler_path = f"{output_dir}/data/pheno_scalers/pheno_scaler_env_{env}.pkl"
+    scaler_stats_path = f"{output_dir}/data/pheno_scalers/pheno_scaler_env_{env}_stats.csv"
 
     if mode == "train":
         scaler = StandardScaler()
         data.loc[:, pheno_col] = scaler.fit_transform(data[[pheno_col]])
         joblib.dump(scaler, scaler_path)
         
+        mean_values = scaler.mean_
+        scale_values = scaler.scale_
+        pd.DataFrame({'mean': mean_values, 'scale': scale_values}).to_csv(scaler_stats_path, index=False)
+        
     elif mode == "inverse":
         if not os.path.exists(scaler_path):
             raise FileNotFoundError(f"Scaler not found for environment {env} at {scaler_path}")
         scaler = joblib.load(scaler_path)
         data.loc[:, f"{pheno_col}_unscaled"] = scaler.inverse_transform(data[[pheno_col]])
-        
-    elif mode == "inference":
-        if not os.path.exists(scaler_path):
-            raise FileNotFoundError(f"Scaler not found for environment {env} at {scaler_path}")
-        scaler = joblib.load(scaler_path)
-        data.loc[:, pheno_col] = scaler.transform(data[[pheno_col]])
-        
     else:
-        raise ValueError("Mode must be 'train', 'inverse', or 'inference'.")
+        raise ValueError("Mode must be 'train' or 'inverse'.")
 
     return data

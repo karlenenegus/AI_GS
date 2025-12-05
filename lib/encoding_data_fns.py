@@ -33,7 +33,6 @@ def make_dict(data, column):
 
 @dataclass
 class EncodingConfig:
-    encoding_window_size: int = 9
     shift: int = 0
     nSubsample: int = 0
     kernel_type: str = "cosine"
@@ -557,7 +556,7 @@ class Make_Encodings():
             window = pd.DataFrame(window)
             
         st = window.columns[0]
-        ed = window.columns[-1]      
+        ed = window.columns[-1]
         
         if self.encoding_mode == 'dosage':
             x = window
@@ -567,19 +566,23 @@ class Make_Encodings():
                 X_selected = x[selected_features]
                 
                 if self.uniform_size_per_window:
-                    X_selected_variance = X_selected.var(skipna=True)
-                    top_k = np.argsort(X_selected_variance)[::-1][:size_per_window]
+                    X4Var = X_selected.replace(-1, np.nan)
+                    variance = X4Var.var(skipna=True)
+                    
+                    top_k = np.argsort(variance)[::-1][:size_per_window]
+                    
                     # Select columns by position using iloc
                     x_filtered = X_selected.iloc[:, top_k]
-
+                    
                     if not os.path.exists(f'{output_folder}/encoding_keys/top_k_indices/'):
                         os.makedirs(f'{output_folder}/encoding_keys/top_k_indices/')
                     
                     # Save top_k indices for inference
                     joblib.dump(top_k, f'{output_folder}/encoding_keys/top_k_indices/top_k_indices_window{st}-{ed}.pkl')
                 else:
+                    warn(f"Warning: uniform_size_per_window is False. Using all features for encoding.")
                     x_filtered = X_selected
-                
+
                 if not os.path.exists(f'{output_folder}/encoding_keys/selected_features/'):
                     os.makedirs(f'{output_folder}/encoding_keys/selected_features/')
                     
@@ -594,7 +597,7 @@ class Make_Encodings():
                 
                 selected_features = joblib.load(selected_features_path)
                 X_selected = x[selected_features]
-
+                
                 if self.uniform_size_per_window:
                     top_k_path = f'{output_folder}/encoding_keys/top_k_indices/top_k_indices_window{st}-{ed}.pkl'
                     if not os.path.exists(top_k_path):
@@ -605,26 +608,32 @@ class Make_Encodings():
                     top_k = joblib.load(top_k_path)
 
                     x_filtered = X_selected.iloc[:, top_k]
+                    
                 else:
                     x_filtered = X_selected
+                    warn(f"Warning: uniform_size_per_window is False. Using all features for encoding.")
+    
+            # Convert to numpy array and check for NaN before allele encoding
+            if isinstance(x_filtered, pd.DataFrame):
+                x_filtered_array = x_filtered.values
+            else:
+                x_filtered_array = x_filtered
             
-            #x_filtered_array = x_filtered.values.astype(np.float32)  # [individuals, snps]
+            allele_A = np.zeros_like(x_filtered_array, dtype=np.float32)
+            allele_B = np.zeros_like(x_filtered_array, dtype=np.float32)
             
-            allele_A = np.zeros_like(x_filtered, dtype=np.float32)
-            allele_B = np.zeros_like(x_filtered, dtype=np.float32)
+            allele_A[x_filtered_array == 0] = 2
+            allele_A[x_filtered_array == 1] = 1
             
-            allele_A[x_filtered == 0] = 2
-            allele_A[x_filtered == 1] = 1
+            allele_B[x_filtered_array == 2] = 2
+            allele_B[x_filtered_array == 1] = 1
             
-            allele_B[x_filtered == 2] = 2
-            allele_B[x_filtered == 1] = 1
-
             #interaction_feature = allele_A * allele_B
             
             # Stack into [individuals, snps, 2] shape
             #x_filtered_3d = np.stack([allele_A, allele_B, interaction_feature], axis=-1)
             x_filtered_3d = np.stack([allele_A, allele_B], axis=-1)  # [individuals, snps, 2]
-            
+              
             return x_filtered_3d
 
         elif self.encoding_mode == 'nystroem-KPCA':
@@ -870,7 +879,9 @@ class Make_Encodings():
             joblib.dump(new_landmark_idxs, f'{self.output_dir}/encoding_keys/landmarks/selected_landmark_idxs.pkl')
 
             encodings = encodings[:, :, new_landmark_idxs] # [n_individuals, n_windows, encoding_window_size_out]
-        
+        elif self.encoding_mode == "dosage":
+            encodings = encodings[:, :sum(window_sizes), :] # [n_individuals, output_size_snps, 2]  
+
         n_individuals, encoding_length, encoding_depth = encodings.shape
         encodings = encodings.reshape(n_individuals, encoding_length * encoding_depth)
         
@@ -967,6 +978,8 @@ class Make_Encodings():
             
         if self.encoding_mode == "nystroem-KPCA":
             encodings = encodings[:, :, :min(window_sizes)] # [n_individuals, n_windows, min(snps_per_window)]  
+        elif self.encoding_mode == "dosage":
+            encodings = encodings[:, :sum(window_sizes), :]
             
         n_individuals, encoding_length, encoding_depth = encodings.shape
         encodings = encodings.reshape(n_individuals, encoding_length * encoding_depth)
