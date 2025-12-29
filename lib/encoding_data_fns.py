@@ -140,16 +140,44 @@ class PhenotypeData:
                     env_dict_path, header=False
                 )
             else:
-                # If expecting environments not in training set, check if env_dict already exists
+                # If expecting environments not in training set, load existing dict and add new environments
                 if os.path.exists(env_dict_path):
-                    print(
-                        "Using existing env_dict_file.csv. If this is unexpected set "
-                        "'unseen_environments = False'. Expecting new environments in testing set."
-                    )
+                    # Load existing environment dictionary
+                    env_df = pd.read_csv(env_dict_path, header=None, index_col=0)
+                    existing_env_dict = env_df.iloc[:, 0].to_dict()
+                    max_id = max(existing_env_dict.values()) if existing_env_dict else 0
+                    
+                    # Get unique environments from current training data
+                    current_envs = set(np.unique(self.phenotypes_long[self.env_column_name]))
+                    existing_envs = set(existing_env_dict.keys())
+                    
+                    # Find new environments not in existing dictionary
+                    new_envs = current_envs - existing_envs
+                    
+                    if new_envs:
+                        # Assign new IDs starting from max_id + 1
+                        new_env_dict = {env: max_id + i + 1 for i, env in enumerate(sorted(new_envs))}
+                        
+                        # Append new environments to the file
+                        new_env_df = pd.DataFrame.from_dict(new_env_dict, orient='index')
+                        new_env_df.to_csv(env_dict_path, mode='a', header=False)
+                        
+                        print(
+                            f"Added {len(new_envs)} new environment(s) to env_dict_file.csv: {sorted(new_envs)}"
+                        )
+                    else:
+                        print(
+                            "Using existing env_dict_file.csv. No new environments found in training set."
+                        )
                 else:
-                    raise ValueError(
-                        f'{env_dict_path} does not exist. Pre-generated file is required '
-                        'for processing new environments in inference sets.'
+                    # If file doesn't exist, create it from current training data
+                    print(
+                        f"env_dict_file.csv not found. Creating new file from training data. "
+                        "If this is unexpected, ensure the file exists for processing new environments."
+                    )
+                    env_dict = make_dict(self.phenotypes_long, self.env_column_name)
+                    pd.DataFrame.from_dict(env_dict, orient='index').to_csv(
+                        env_dict_path, header=False
                     )
         
         # During validation/testing, dictionaries must already exist

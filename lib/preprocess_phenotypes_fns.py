@@ -156,13 +156,20 @@ def scale_phenotype(data, env, mode, output_dir, pheno_col):
         mean_values = scaler.mean_
         scale_values = scaler.scale_
         pd.DataFrame({'mean': mean_values, 'scale': scale_values}).to_csv(scaler_stats_path, index=False)
+    
+    elif mode == "inference":
+        if not os.path.exists(scaler_path):
+            raise FileNotFoundError(f"Scaler not found for environment {env} at {scaler_path}")
         
+        scaler = joblib.load(scaler_path)
+        data.loc[:, pheno_col] = scaler.transform(data[[pheno_col]])
+
     elif mode == "inverse":
         if not os.path.exists(scaler_path):
             raise FileNotFoundError(f"Scaler not found for environment {env} at {scaler_path}")
         scaler = joblib.load(scaler_path)
         data.loc[:, f"{pheno_col}_unscaled"] = scaler.inverse_transform(data[[pheno_col]])
     else:
-        raise ValueError("Mode must be 'train' or 'inverse'.")
+        raise ValueError("Mode must be 'train', 'inference', or 'inverse'.")
 
     return data

@@ -37,6 +37,7 @@ import argparse
 import pandas as pd
 import numpy as np
 import json
+import os
 from sklearn.model_selection import StratifiedGroupKFold
 
 # Add project root to Python path to enable imports from lib/
@@ -147,13 +148,17 @@ else:
 if env_hold_out:
     unique_envs = pheno_data[args.env_col].unique()
     np.random.seed(args.randomstate)
-    env_to_hold_out = np.random.choice(unique_envs, size=args.env_hold_out)
+    env_to_hold_out = np.random.choice(unique_envs, size=args.envs_hold_out)
     
     # Create environment dictionary
     env_df = pd.DataFrame({
         'env': unique_envs,
         'env_index': range(1, len(unique_envs) + 1)
     })
+
+    if not os.path.exists(output_dir / 'data' / 'encoding_keys'):
+        os.makedirs(output_dir / 'data' / 'encoding_keys')
+
     env_df.to_csv(output_dir / 'data' / 'encoding_keys' / 'env_dict_file.csv', index=False)
 
 # Create train/test/val splits based on folds
@@ -179,7 +184,8 @@ else:
 
 # Adjust splits if environment holdout is enabled
 if env_hold_out:
-    env_holdout_idx = np.isin(pheno_data[args.env_col], [env_to_hold_out])
+    env_holdout_values = np.atleast_1d(env_to_hold_out)
+    env_holdout_idx = np.isin(pheno_data[args.env_col], env_holdout_values)
     
     # Exclude the held-out environment from train and val
     train_idx = train_idx & ~env_holdout_idx
@@ -234,7 +240,7 @@ data_train_scaled = [
         data=data_train[data_train[env_col_name] == env],
         env=env,
         mode="train",
-        location=str(output_dir),
+        output_dir=str(output_dir),
         pheno_col='trait_value'  # Standard name after convert2output
     )
     for env in unique_envs
@@ -245,7 +251,7 @@ data_val_scaled = [
         data=data_val[data_val[env_col_name] == env],
         env=env,
         mode="inference",
-        location=str(output_dir),
+        output_dir=str(output_dir),
         pheno_col='trait_value'  # Standard name after convert2output
     )
     for env in unique_envs
@@ -256,7 +262,7 @@ data_test_scaled = [
         data=data_test[data_test[env_col_name] == env],
         env=env,
         mode="inference",
-        location=str(output_dir),
+        output_dir=str(output_dir),
         pheno_col='trait_value'  # Standard name after convert2output
     )
     for env in unique_envs
@@ -264,14 +270,24 @@ data_test_scaled = [
 
 # Handle unseen environment scaling if holdout is enabled
 if env_hold_out:
-    data_test_unseen_scaled = scale_phenotype(
-        data=data_test[data_test[env_col_name] == env_to_hold_out],
-        env=env_to_hold_out,
-        mode="train",
-        location=str(output_dir),
-        pheno_col='trait_value'  # Standard name after convert2output
-    )
-    data_test_scaled = data_test_scaled + [data_test_unseen_scaled]
+    # Convert to list (handles scalar, array, or list)
+    envs_to_hold_out = np.atleast_1d(env_to_hold_out).tolist()
+    
+    # Scale each held-out environment separately
+    data_test_unseen_scaled = []
+    for env in envs_to_hold_out:
+        env_data = data_test[data_test[env_col_name] == env]
+        if len(env_data) > 0:
+            scaled_env_data = scale_phenotype(
+                data=env_data,
+                env=env,
+                mode="train",
+                output_dir=str(output_dir),
+                pheno_col='trait_value'  # Standard name after convert2output
+            )
+            data_test_unseen_scaled.append(scaled_env_data)
+    
+    data_test_scaled = data_test_scaled + data_test_unseen_scaled
 
 # Combine scaled data
 data_train_scaled = pd.concat(data_train_scaled, ignore_index=True)
